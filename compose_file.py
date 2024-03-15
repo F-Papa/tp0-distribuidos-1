@@ -18,40 +18,44 @@ name: 'tp0'
 
 def server_config():
     return """
-    server:
-        container_name: server
-        image: server:latest
-        entrypoint: python3 /main.py
-        environment:
-            - PYTHONUNBUFFERED=1
-            - LOGGING_LEVEL=DEBUG
-        networks:
-            - testing_net
+  server:
+    container_name: server
+    image: server:latest
+    entrypoint: python3 /main.py
+    environment:
+      - PYTHONUNBUFFERED=1
+      - LOGGING_LEVEL=DEBUG
+    networks:
+      - testing_net
+    volumes:
+      - ./server/config.ini:/config.ini
 """
 
 def client_config(client_number: int):
     return f"""
-    client{client_number}:
-        container_name: client{client_number}
-        image: client:latest
-        entrypoint: /client
-        environment:
-            - CLI_ID={client_number}
-            - CLI_LOG_LEVEL=DEBUG
-        networks:
-            - testing_net
-        depends_on:
-            - server
+  client{client_number}:
+    container_name: client{client_number}
+    image: client:latest
+    entrypoint: /client
+    environment:
+      - CLI_ID={client_number}
+      - CLI_LOG_LEVEL=DEBUG
+    networks:
+      - testing_net
+    depends_on:
+      - server
+    volumes:
+      - ./client/config.yaml:/config.yaml
 """
 
 def network_config():
     return """
 networks:
-    testing_net:
-        ipam:
-            driver: default
-            config:
-                - subnet: 172.25.125.0/24
+  testing_net:
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.25.125.0/24
 """
 
 if __name__ == "__main__":
