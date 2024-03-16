@@ -13,10 +13,20 @@ Para ejecutarlo basta con el comando:
 > python compose.py \<num_de_clientes>
 
 ## Ejercicio 2
-En este ejercicio aprendí no era apropiado usar tabs para identar las líneas en el archivo de docker compose, por lo que tuve que recurrir al doble espacio. 
+En este ejercicio aprendí que no era apropiado usar tabs para identar las líneas en el archivo de docker compose, por lo que tuve que recurrir al doble espacio. 
 
 Para lograr lo pedido me pareció que la mejor opción era un `host volume` que simplemente montase el archivo del host original dentro del contenedor. Para ello modifiqué el archivo `compose.py` para que agregase la clave `volumes`
 con el respectivo **source:target** a cada servicio del archivo `docker-compose-dev.yaml`.
 
+## Ejercicio 3
+Para este ejercicio tuve crear un script the python que ejecutara en un **proceso hijo** la aplicacion `netcat`.
+
+Para la conexion, es importante agregar el contenedor donde se ejecute el script a la misma red que el server, cuyo nombre se puede encontrar con  `docker network ls` y es `tp0_testing_net`. Si esto se cumple, se puede acceder al server simplemente por el hostname: `server`
+
+Para automatizar la prueba, en proceso hijo el `stdin` y `stdout` son reemplazados por unos `os.pipe`, de modo que el proceso padre puede escribir el input y leer el output. 
 
 
+Entonces una vez esté el server corriendo, basta ejecutar los siguientes comandos:
+> sudo docker build -f test_script/Dockerfile -t test_script .
+
+> sudo docker run --network tp0_testing_net test_script:latest
