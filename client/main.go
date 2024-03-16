@@ -2,7 +2,10 @@ package main
 
 import (
 	"fmt"
+	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/pkg/errors"
@@ -66,11 +69,11 @@ func InitLogger(logLevel string) error {
 		return err
 	}
 
-    customFormatter := &logrus.TextFormatter{
-      TimestampFormat: "2006-01-02 15:04:05",
-      FullTimestamp: false,
-    }
-    logrus.SetFormatter(customFormatter)
+	customFormatter := &logrus.TextFormatter{
+		TimestampFormat: "2006-01-02 15:04:05",
+		FullTimestamp:   false,
+	}
+	logrus.SetFormatter(customFormatter)
 	logrus.SetLevel(level)
 	return nil
 }
@@ -79,15 +82,33 @@ func InitLogger(logLevel string) error {
 // For debugging purposes only
 func PrintConfig(v *viper.Viper) {
 	logrus.Infof("action: config | result: success | client_id: %s | server_address: %s | loop_lapse: %v | loop_period: %v | log_level: %s",
-	    v.GetString("id"),
-	    v.GetString("server.address"),
-	    v.GetDuration("loop.lapse"),
-	    v.GetDuration("loop.period"),
-	    v.GetString("log.level"),
-    )
+		v.GetString("id"),
+		v.GetString("server.address"),
+		v.GetDuration("loop.lapse"),
+		v.GetDuration("loop.period"),
+		v.GetString("log.level"),
+	)
+}
+
+func signalHandler(signalChannel chan os.Signal, client **common.Client) {
+	for {
+		signal := <-signalChannel
+		if signal == syscall.SIGTERM {
+			log.Infof("action: terminate | result: in_progress | client_id: %s", os.Getenv("CLI_ID"))
+			if *client != nil {
+				(*client).Terminate()
+			}
+			return
+		}
+	}
 }
 
 func main() {
+	signalChannel := make(chan os.Signal, 1)
+	var client *common.Client = nil
+	signal.Notify(signalChannel, syscall.SIGTERM)
+	go signalHandler(signalChannel, &client)
+
 	v, err := InitConfig()
 	if err != nil {
 		log.Fatalf("%s", err)
@@ -107,6 +128,6 @@ func main() {
 		LoopPeriod:    v.GetDuration("loop.period"),
 	}
 
-	client := common.NewClient(clientConfig)
+	client = common.NewClient(clientConfig)
 	client.StartClientLoop()
 }

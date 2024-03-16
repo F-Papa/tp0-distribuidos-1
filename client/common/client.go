@@ -19,8 +19,9 @@ type ClientConfig struct {
 
 // Client Entity that encapsulates how
 type Client struct {
-	config ClientConfig
-	conn   net.Conn
+	config     ClientConfig
+	conn       net.Conn
+	terminated bool
 }
 
 // NewClient Initializes a new client receiving the configuration
@@ -29,6 +30,7 @@ func NewClient(config ClientConfig) *Client {
 	client := &Client{
 		config: config,
 	}
+	client.terminated = false
 	return client
 }
 
@@ -39,7 +41,7 @@ func (c *Client) createClientSocket() error {
 	conn, err := net.Dial("tcp", c.config.ServerAddress)
 	if err != nil {
 		log.Fatalf(
-	        "action: connect | result: fail | client_id: %v | error: %v",
+			"action: connect | result: fail | client_id: %v | error: %v",
 			c.config.ID,
 			err,
 		)
@@ -58,11 +60,17 @@ loop:
 	for timeout := time.After(c.config.LoopLapse); ; {
 		select {
 		case <-timeout:
-	        log.Infof("action: timeout_detected | result: success | client_id: %v",
-                c.config.ID,
-            )
+			log.Infof("action: timeout_detected | result: success | client_id: %v",
+				c.config.ID,
+			)
 			break loop
 		default:
+		}
+		if c.terminated {
+			c.conn.Close()
+			log.Infof("action: terminate | result: success | client_id: %v",
+				c.config.ID)
+			return
 		}
 
 		// Create the connection the server in every loop iteration. Send an
@@ -81,19 +89,23 @@ loop:
 
 		if err != nil {
 			log.Errorf("action: receive_message | result: fail | client_id: %v | error: %v",
-                c.config.ID,
+				c.config.ID,
 				err,
 			)
 			return
 		}
 		log.Infof("action: receive_message | result: success | client_id: %v | msg: %v",
-            c.config.ID,
-            msg,
-        )
+			c.config.ID,
+			msg,
+		)
 
 		// Wait a time between sending one message and the next one
 		time.Sleep(c.config.LoopPeriod)
 	}
 
 	log.Infof("action: loop_finished | result: success | client_id: %v", c.config.ID)
+}
+
+func (c *Client) Terminate() {
+	c.terminated = true
 }

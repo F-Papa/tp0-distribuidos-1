@@ -37,3 +37,6 @@ La clase `server` ahora tiene un atributo privado (simbolizado por el prefijo `_
 El handler de `SIGTERM` recibe dos parámetros que ya están definidos (signum y frame), así que para se pudiera llamar a `stop` el server pasó a ser una variable global. Otra solución podría haber sido un booleano o un pipe, pero no parecía posible escapar de tener una variable global.
 
 ### Cliente
+Ahora la clase `client` tiene un atributo `terminated`, cuando este se setea en true, mediante el nuevo método `Terminate`, el loop del cliente no continúa y la función `StartClientLoop` retorna.
+
+Para manejar la señal del SO, tuve que crear un `channel` que escuchara las señales. Este channel y un puntero al puntero del cliente son pasados como parámetros al handler, que al recibir una señal `SIGTERM`, llama a `client.Terminate` en caso de que `client` ya existiera.
