@@ -1,7 +1,7 @@
 import sys
 
 def main(num_of_clients: int):
-    print(f"Starting {num_of_clients} clients")
+    print(f"Creating docker-compose-dev.yaml with {num_of_clients} clients")
     with open("docker-compose-dev.yaml", "w") as f:
         f.write(general_config())
         f.write("services:\n")
