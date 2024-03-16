@@ -4,7 +4,17 @@ from configparser import ConfigParser
 from common.server import Server
 import logging
 import os
+import signal
 
+server = None
+
+def handle_sig_term(signum, frame):
+    # Handle SIGTERM signal by telling server to stop.
+    global server
+    if server:
+        server.stop()
+
+signal.signal(signal.SIGTERM, handle_sig_term)
 
 def initialize_config():
     """ Parse env variables or config file to find program config params
@@ -48,6 +58,7 @@ def main():
                   f"listen_backlog: {listen_backlog} | logging_level: {logging_level}")
 
     # Initialize server and start server loop
+    global server
     server = Server(port, listen_backlog)
     server.run()
 

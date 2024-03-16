@@ -1,3 +1,4 @@
+import os
 import socket
 import logging
 
@@ -8,6 +9,7 @@ class Server:
         self._server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._server_socket.bind(('', port))
         self._server_socket.listen(listen_backlog)
+        self.__terminated = False
 
     def run(self):
         """
@@ -20,9 +22,11 @@ class Server:
 
         # TODO: Modify this program to handle signal to graceful shutdown
         # the server
-        while True:
+        while not self.__terminated:
             client_sock = self.__accept_new_connection()
             self.__handle_client_connection(client_sock)
+        logging.info('action: stop_server | result: success')
+        
 
     def __handle_client_connection(self, client_sock):
         """
@@ -56,3 +60,8 @@ class Server:
         c, addr = self._server_socket.accept()
         logging.info(f'action: accept_connections | result: success | ip: {addr[0]}')
         return c
+
+    def stop(self):
+        # Set the server to terminated state, so it won't keep looping
+        logging.info('action: stop_server | result: in_progress')
+        self.__terminated = True

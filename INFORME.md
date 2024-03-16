@@ -28,3 +28,12 @@ Para automatizar la prueba, en proceso hijo el `stdin` y `stdout` son reemplazad
 El script `test_server.sh` se ocupa de crear la imagen y el contenedor para correr la prueba y mostrar el resultado. Puede ejecutarse mediante:
 
 > ./test_server.sh
+
+## Ejercicio 4
+
+### Server
+La clase `server` ahora tiene un atributo privado (simbolizado por el prefijo `__`) `__terminated` que se usa como condición para el loop de su método `run`. Esto permite que mediante un llamado al método `stop`, el servidor deje de loopear.
+
+El handler de `SIGTERM` recibe dos parámetros que ya están definidos (signum y frame), así que para se pudiera llamar a `stop` el server pasó a ser una variable global. Otra solución podría haber sido un booleano o un pipe, pero no parecía posible escapar de tener una variable global.
+
+### Cliente
