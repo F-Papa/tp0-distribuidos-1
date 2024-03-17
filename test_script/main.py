@@ -14,7 +14,7 @@ def main():
         os.dup2(c2p_write, 1)
         os.close(p2c_read)
         os.close(c2p_write)
-        os.execlp('nc', 'nc', 'server', '12345')
+        os.execlp('netcat', 'netcat', 'server', '12345')
     else:
         # Parent process
         os.close(p2c_read)
