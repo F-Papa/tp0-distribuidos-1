@@ -25,8 +25,6 @@ Para la conexion, es importante agregar el contenedor donde se ejecute el script
 
 Para automatizar la prueba, en proceso hijo el `stdin` y `stdout` son reemplazados por unos `os.pipe`, de modo que el proceso padre puede escribir el input y leer el output. 
 
+El script `test_server.sh` se ocupa de crear la imagen y el contenedor para correr la prueba y mostrar el resultado. Puede ejecutarse mediante:
 
-Entonces una vez esté el server corriendo, basta ejecutar los siguientes comandos:
-> sudo docker build -f test_script/Dockerfile -t test_script .
-
-> sudo docker run --network tp0_testing_net test_script:latest
+> ./test_server.sh
