@@ -1,7 +1,7 @@
 import os
 import socket
 import logging
-
+import errno
 
 class Server:
     def __init__(self, port, listen_backlog):
@@ -20,11 +20,14 @@ class Server:
         finishes, servers starts to accept new connections again
         """
 
-        # TODO: Modify this program to handle signal to graceful shutdown
-        # the server
+        BAD_FD = 9
         while not self.__terminated:
-            client_sock = self.__accept_new_connection()
-            self.__handle_client_connection(client_sock)
+            try:
+                client_sock = self.__accept_new_connection()
+                self.__handle_client_connection(client_sock)
+            except OSError as e:
+                if not (self.__terminated and e.errno == errno.EBADF):
+                    raise e
         logging.info('action: stop_server | result: success')
         
 
@@ -65,3 +68,15 @@ class Server:
         # Set the server to terminated state, so it won't keep looping
         logging.info('action: stop_server | result: in_progress')
         self.__terminated = True
+
+        # Check if there is a client connected
+        try:
+            self._server_socket.getpeername()
+        except OSError as e:
+            # No client is connected
+            if e.errno == errno.ENOTCONN:
+                self._server_socket.close()
+                return
+            # Other error
+            else:
+                raise e
