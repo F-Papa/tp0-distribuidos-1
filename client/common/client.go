@@ -2,8 +2,9 @@ package common
 
 import (
 	"bufio"
-	"fmt"
 	"net"
+	"os"
+	"strconv"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -57,74 +58,65 @@ func (c *Client) createClientSocket() error {
 
 // StartClientLoop Send messages to the client until some time threshold is met
 func (c *Client) StartClientLoop() {
-	// autoincremental msgID to identify every message sent
-	msgID := 1
+	// Get the environment variables
+	name := os.Getenv("NAME")
+	lastname := os.Getenv("LASTNAME")
+	dni := os.Getenv("DNI")
+	birthdate := os.Getenv("BIRTHDATE")
+	number, _ := strconv.Atoi(os.Getenv("NUMBER"))
+	agency, _ := strconv.Atoi(c.config.ID)
 
-loop:
-	// Send messages if the loopLapse threshold has not been surpassed
-	for timeout := time.After(c.config.LoopLapse); !c.terminated; msgID++ {
-		select {
-		case <-timeout:
-			log.Infof("action: timeout_detected | result: success | client_id: %v",
-				c.config.ID,
-			)
-			break loop
-		default:
-		}
-		// Create the connection the server in every loop iteration.
-		c.createClientSocket()
+	// Create the bet
+	bettorInfo := NewBettorInfo(name, lastname, dni, birthdate)
+	bet := NewBet(number, int(agency), *bettorInfo)
+	serializedBet := SerializeBet(bet)
 
-		// TODO: Modify the send to avoid short-write
-		_, err := fmt.Fprintf(
-			c.conn,
-			"[CLIENT %v] Message N°%v\n",
-			c.config.ID,
-			msgID,
-		)
+	log.Debugf("Serialized Bet: %x", serializedBet)
+	log.Debugf("Len: %d", len(serializedBet))
 
-		// Only log the error if the client has not been terminated
+	// Create the connection the server
+	c.createClientSocket()
+
+	//Sleep for one minute
+	total_bytes_written := 0
+
+	for total_bytes_written < len(serializedBet) && !c.terminated {
+		bytes_written, err := c.conn.Write(serializedBet[total_bytes_written:])
+
 		if err != nil {
 			if !c.terminated {
 				log.Errorf("action: send_message | result: fail | client_id: %v | error: %v",
-					c.config.ID,
-					err,
-				)
+					c.config.ID, err)
 				c.conn.Close()
 			}
 			return
 		}
-
-		msg, err := bufio.NewReader(c.conn).ReadString('\n')
-
-		// Only log the error if the client has not been terminated
-		if err != nil {
-			if !c.terminated {
-				log.Errorf("action: receive_message | result: fail | client_id: %v | error: %v",
-					c.config.ID,
-					err,
-				)
-				c.conn.Close()
-			}
-			return
-		}
-
-		log.Infof("action: receive_message | result: success | client_id: %v | msg: %v",
-			c.config.ID,
-			msg,
-		)
-
-		c.conn.Close()
-
-		// Wait a time between sending one message and the next one
-		time.Sleep(c.config.LoopPeriod)
+		total_bytes_written += bytes_written
 	}
 
-	if c.terminated {
-		log.Infof("action: terminate | result: success | client_id: %v", c.config.ID)
+	msg, err := bufio.NewReader(c.conn).ReadString('\n')
+	c.conn.Close()
+
+	if err != nil {
+		if c.terminated {
+			log.Infof("action: terminate | result: success | client_id: %v",
+				c.config.ID)
+		} else {
+			log.Errorf("action: receive_message | result: fail | client_id: %v | error: %v",
+				c.config.ID, err)
+		}
 		return
-	} else {
-		log.Infof("action: loop_finished | result: success | client_id: %v", c.config.ID)
 	}
+
+	switch msg {
+	case "1\n":
+		log.Infof("action: store_bet | result: success | dni: %v | number: %v",
+			bet.bettor.dni, bet.number)
+	default:
+		log.Errorf("action: store_bet | result: fail | dni: %v | number: %v",
+			bet.bettor.dni, bet.number)
+	}
+
 }
 
 func (c *Client) Terminate() {
