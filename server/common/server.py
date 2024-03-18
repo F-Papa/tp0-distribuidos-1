@@ -9,7 +9,7 @@ class Server:
         self._server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._server_socket.bind(('', port))
         self._server_socket.listen(listen_backlog)
-        self.__terminated = False
+        self._terminated = False
 
     def run(self):
         """
@@ -20,13 +20,12 @@ class Server:
         finishes, servers starts to accept new connections again
         """
 
-        BAD_FD = 9
-        while not self.__terminated:
+        while not self._terminated:
             try:
                 client_sock = self.__accept_new_connection()
                 self.__handle_client_connection(client_sock)
             except OSError as e:
-                if not (self.__terminated and e.errno == errno.EBADF):
+                if not (self._terminated and e.errno == errno.EBADF):
                     raise e
         logging.info('action: stop_server | result: success')
         
@@ -67,16 +66,5 @@ class Server:
     def stop(self):
         # Set the server to terminated state, so it won't keep looping
         logging.info('action: stop_server | result: in_progress')
-        self.__terminated = True
-
-        # Check if there is a client connected
-        try:
-            self._server_socket.getpeername()
-        except OSError as e:
-            # No client is connected
-            if e.errno == errno.ENOTCONN:
-                self._server_socket.close()
-                return
-            # Other error
-            else:
-                raise e
+        self._terminated = True
+        self._server_socket.close()

@@ -32,11 +32,13 @@ El script `test_server.sh` se ocupa de crear la imagen y el contenedor para corr
 ## Ejercicio 4
 
 ### Server
-La clase `Server` ahora tiene un atributo privado (simbolizado por el prefijo `__`) `__terminated` que se usa como condición para el loop de su método `run`. Esto permite que mediante un llamado al método `stop`, el servidor deje de loopear. 
+La clase `Server` ahora tiene un atributo privado (simbolizado por el prefijo `_`) `_terminated` que se usa como condición para el loop de su método `run`. Esto permite que mediante un llamado al método `stop`, el servidor deje de loopear. 
 
 El handler de `SIGTERM` recibe dos parámetros que ya están definidos (signum y frame), así que para se pudiera llamar a `stop` el server pasó a ser una variable global. Otra solución podría haber sido un booleano o un pipe, pero no parecía posible escapar de tener una variable global.
 
-En el caso de que el servidor se encontrara bloqueado por el método `socket.accept`, había que llamar a `socket.close`. Para saber si este era el caso o no, usé el método `socket.getpeername` que en caso de no estar conectado, lanza un `OSError` con `errno = 107 (ENOTCONN)`. Si esta es la excepción que se lanza, procedemos aentonces a cerrar el socket. Por otro lado, al cerrarlo, el método `socket.accept` va a lanzar `OSError` con `errno = 9 (EBADF)`. Entonces si y solo si esta excepción es detectada y `server.__terminated == True`, entonces sabemos que el socket fue cerrado desde el handler, por lo que la excepción es ignorada. 
+En el caso de que el servidor se encontrara bloqueado por el método `socket.accept`, había que llamar a `socket.close`. Al cerrarlo, el método `socket.accept` va a lanzar `OSError` con `errno = 9 (EBADF)`. Si esta excepción es detectada y `server._terminated == True`, entonces sabemos que el socket fue cerrado desde el handler, por lo que la excepción es ignorada. 
+
+Por otro lado, si el server se encuentra bloqueado en la operación `socket.recv`, no es posible desbloquearlo incluso cerrando el socket desde el handler. Por lo que se quedará bloqueado hasta que llegue `SIG_KILL` o el cliente conteste.
 
 
 ### Cliente
