@@ -46,7 +46,12 @@ func (c *Client) createClientSocket() error {
 			err,
 		)
 	}
-	c.conn = conn
+	if c.terminated {
+		conn.Close()
+	} else {
+		c.conn = conn
+	}
+
 	return nil
 }
 
@@ -57,7 +62,7 @@ func (c *Client) StartClientLoop() {
 
 loop:
 	// Send messages if the loopLapse threshold has not been surpassed
-	for timeout := time.After(c.config.LoopLapse); ; {
+	for timeout := time.After(c.config.LoopLapse); !c.terminated; msgID++ {
 		select {
 		case <-timeout:
 			log.Infof("action: timeout_detected | result: success | client_id: %v",
@@ -66,46 +71,63 @@ loop:
 			break loop
 		default:
 		}
-		if c.terminated {
-			c.conn.Close()
-			log.Infof("action: terminate | result: success | client_id: %v",
-				c.config.ID)
-			return
-		}
-
-		// Create the connection the server in every loop iteration. Send an
+		// Create the connection the server in every loop iteration.
 		c.createClientSocket()
 
 		// TODO: Modify the send to avoid short-write
-		fmt.Fprintf(
+		_, err := fmt.Fprintf(
 			c.conn,
 			"[CLIENT %v] Message N°%v\n",
 			c.config.ID,
 			msgID,
 		)
-		msg, err := bufio.NewReader(c.conn).ReadString('\n')
-		msgID++
-		c.conn.Close()
 
+		// Only log the error if the client has not been terminated
 		if err != nil {
-			log.Errorf("action: receive_message | result: fail | client_id: %v | error: %v",
-				c.config.ID,
-				err,
-			)
+			if !c.terminated {
+				log.Errorf("action: send_message | result: fail | client_id: %v | error: %v",
+					c.config.ID,
+					err,
+				)
+				c.conn.Close()
+			}
 			return
 		}
+
+		msg, err := bufio.NewReader(c.conn).ReadString('\n')
+
+		// Only log the error if the client has not been terminated
+		if err != nil {
+			if !c.terminated {
+				log.Errorf("action: receive_message | result: fail | client_id: %v | error: %v",
+					c.config.ID,
+					err,
+				)
+				c.conn.Close()
+			}
+			return
+		}
+
 		log.Infof("action: receive_message | result: success | client_id: %v | msg: %v",
 			c.config.ID,
 			msg,
 		)
 
+		c.conn.Close()
+
 		// Wait a time between sending one message and the next one
 		time.Sleep(c.config.LoopPeriod)
 	}
 
-	log.Infof("action: loop_finished | result: success | client_id: %v", c.config.ID)
+	if c.terminated {
+		log.Infof("action: terminate | result: success | client_id: %v", c.config.ID)
+		return
+	} else {
+		log.Infof("action: loop_finished | result: success | client_id: %v", c.config.ID)
+	}
 }
 
 func (c *Client) Terminate() {
 	c.terminated = true
+	c.conn.Close()
 }
