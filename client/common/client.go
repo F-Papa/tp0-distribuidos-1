@@ -91,10 +91,11 @@ loop:
 				)
 				c.conn.Close()
 			}
-			return
+			break loop
 		}
 
 		msg, err := bufio.NewReader(c.conn).ReadString('\n')
+		c.conn.Close()
 
 		// Only log the error if the client has not been terminated
 		if err != nil {
@@ -103,9 +104,8 @@ loop:
 					c.config.ID,
 					err,
 				)
-				c.conn.Close()
 			}
-			return
+			break loop
 		}
 
 		log.Infof("action: receive_message | result: success | client_id: %v | msg: %v",
@@ -113,12 +113,9 @@ loop:
 			msg,
 		)
 
-		c.conn.Close()
-
 		// Wait a time between sending one message and the next one
 		time.Sleep(c.config.LoopPeriod)
 	}
-
 	if c.terminated {
 		log.Infof("action: terminate | result: success | client_id: %v", c.config.ID)
 		return

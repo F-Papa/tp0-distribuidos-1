@@ -32,16 +32,18 @@ El script `test_server.sh` se ocupa de crear la imagen y el contenedor para corr
 ## Ejercicio 4
 
 ### Server
-La clase `Server` ahora tiene un atributo privado (simbolizado por el prefijo `_`) `_terminated` que se usa como condición para el loop de su método `run`. Esto permite que mediante un llamado al método `stop`, el servidor deje de loopear. 
+La clase `Server` ahora tiene dos atributos privados (simbolizado por el prefijo `_`) `_terminated` y `_conn` que se usa como utilizados para el graceful shutdown del mismo. El primero es un flag para que el loop de su método `run`, deje de loopear. El segundo es el socket obtenido mediante `_server_socket.accept`.
 
-El handler de `SIGTERM` recibe dos parámetros que ya están definidos (signum y frame), así que para se pudiera llamar a `stop` el server pasó a ser una variable global. Otra solución podría haber sido un booleano o un pipe, pero no parecía posible escapar de tener una variable global.
 
-En el caso de que el servidor se encontrara bloqueado por el método `socket.accept`, había que llamar a `socket.close`. Al cerrarlo, el método `socket.accept` va a lanzar `OSError` con `errno = 9 (EBADF)`. Si esta excepción es detectada y `server._terminated == True`, entonces sabemos que el socket fue cerrado desde el handler, por lo que la excepción es ignorada. 
+Una vez creado el server en `main`, el handler de `SIGTERM` es asignado a una función anónima que llama al método `stop` del server. Este método hace un `RDWR_SHUTDOWN` del los dos sockets del server y setea `_terminated = True`. Cuando termina el loop, se llama a `socket.close` para liberar los recursos.
 
-Por otro lado, si el server se encuentra bloqueado en la operación `socket.recv`, no es posible desbloquearlo incluso cerrando el socket desde el handler. Por lo que se quedará bloqueado hasta que llegue `SIG_KILL` o el cliente conteste.
 
 
 ### Cliente
-Ahora la clase `Client` tiene un atributo `terminated`, cuando este se setea en true, mediante el nuevo método `Terminate`, el loop del cliente no continúa y la función `StartClientLoop` retorna.
+Ahora la clase `Client` tiene un atributo `terminated`, cuando este se setea en true, mediante el nuevo método `Terminate`, el loop del cliente no continúa y la función `StartClientLoop` retorna. 
+
+Otra cambio es que `client.createClientSocket` chequea el valor de `terminated` antes de retornar. Esto es porque al salir del *signal handler*, el *instruction pointer* podría encontrarse dentro del loop y realizar una iteración extra, cosa que no es deseado.
+
+Dentro del loop cuando se chequea si hubieron errores en las operaciones de red, no se loggean errores si `terminated == True`, ya que es esperable que ocurran dado que se está intentando usar un socket cerrado. 
 
 Para manejar la señal del SO, tuve que crear un `channel` que escuchara las señales. Este channel y un puntero al puntero del cliente son pasados como parámetros al handler, que al recibir una señal `SIGTERM`, llama a `client.Terminate` en caso de que `client` ya existiera.
