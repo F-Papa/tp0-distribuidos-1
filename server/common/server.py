@@ -2,6 +2,8 @@ import os
 import socket
 import logging
 import errno
+from . import communication
+from .utils import *
 
 class Server:
     def __init__(self, port, listen_backlog):
@@ -44,14 +46,19 @@ class Server:
         client socket will also be closed
         """
         try:
-            # TODO: Modify the receive to avoid short-reads
-            msg = self._conn.recv(1024).rstrip().decode('utf-8')
-            addr = self._conn.getpeername()
-            logging.info(f'action: receive_message | result: success | ip: {addr[0]} | msg: {msg}')
-            # TODO: Modify the send to avoid short-writes
-            self._conn.send("{}\n".format(msg).encode('utf-8'))
+            bet = communication.recv_bet(self._conn)
+            if bet is not None:
+                store_bets([bet])
+                logging.info(
+                    "action: apuesta_almacenada | result: success | dni: {} | numero: {}".format(
+                       bet.document, bet.number)
+                )     
+                communication.send_confirmation(bet, self._conn)
         except OSError as e:
-            logging.error("action: receive_message | result: fail | error: {e}")
+            if e.errno in [errno.EBADF,errno.EINTR] and self._terminated:
+                logging.info("action: stop_server | result: success")
+            else:
+                logging.error("action: receive_message | result: fail | error: {e}")
         finally:
             self._conn.close()
 

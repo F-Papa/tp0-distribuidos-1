@@ -1,9 +1,9 @@
 package common
 
 import (
-	"bufio"
-	"fmt"
 	"net"
+	"os"
+	"strconv"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -57,71 +57,51 @@ func (c *Client) createClientSocket() error {
 
 // StartClientLoop Send messages to the client until some time threshold is met
 func (c *Client) StartClientLoop() {
-	// autoincremental msgID to identify every message sent
-	msgID := 1
+	// Get the environment variables
+	name := os.Getenv("NAME")
+	lastname := os.Getenv("LASTNAME")
+	dni, _ := strconv.Atoi(os.Getenv("DNI"))
+	birthdate := os.Getenv("BIRTHDATE")
+	number, _ := strconv.Atoi(os.Getenv("NUMBER"))
+	agency, _ := strconv.Atoi(c.config.ID)
 
-loop:
-	// Send messages if the loopLapse threshold has not been surpassed
-	for timeout := time.After(c.config.LoopLapse); !c.terminated; msgID++ {
-		select {
-		case <-timeout:
-			log.Infof("action: timeout_detected | result: success | client_id: %v",
-				c.config.ID,
-			)
-			break loop
-		default:
+	// Create the bet
+	bettorInfo := NewBettorInfo(name, lastname, dni, birthdate)
+	bet := NewBet(number, int(agency), *bettorInfo)
+	// Create the connection the server
+	c.createClientSocket()
+
+	err := SendBet(bet, &c.conn)
+
+	if err != nil {
+		if !c.terminated {
+			log.Errorf("action: send_message | result: fail | client_id: %v | error: %v",
+				c.config.ID, err)
+			c.conn.Close()
 		}
-		// Create the connection the server in every loop iteration.
-		c.createClientSocket()
+	}
 
-		// TODO: Modify the send to avoid short-write
-		_, err := fmt.Fprintf(
-			c.conn,
-			"[CLIENT %v] Message N°%v\n",
-			c.config.ID,
-			msgID,
-		)
+	received_confirmation := false
 
-		// Only log the error if the client has not been terminated
+	for !received_confirmation && !c.terminated {
+		ack_dni, ack_bet_number, err := RecieveConfirmation(&c.conn)
+
 		if err != nil {
-			if !c.terminated {
-				log.Errorf("action: send_message | result: fail | client_id: %v | error: %v",
-					c.config.ID,
-					err,
-				)
+			if !c.terminated && err.Error() != "invalid confirmation message" {
+				log.Errorf("action: recieve_confirmation | result: fail | client_id: %v | error: %v",
+					c.config.ID, err)
 				c.conn.Close()
+				return
 			}
-			break loop
 		}
 
-		msg, err := bufio.NewReader(c.conn).ReadString('\n')
-		c.conn.Close()
-
-		// Only log the error if the client has not been terminated
-		if err != nil {
-			if !c.terminated {
-				log.Errorf("action: receive_message | result: fail | client_id: %v | error: %v",
-					c.config.ID,
-					err,
-				)
-			}
-			break loop
+		if ack_dni == dni && ack_bet_number == number {
+			received_confirmation = true
+			log.Infof("action: apuesta_enviada | result: success | dni: %v | numero: %v",
+				ack_dni, ack_bet_number)
 		}
-
-		log.Infof("action: receive_message | result: success | client_id: %v | msg: %v",
-			c.config.ID,
-			msg,
-		)
-
-		// Wait a time between sending one message and the next one
-		time.Sleep(c.config.LoopPeriod)
 	}
-	if c.terminated {
-		log.Infof("action: terminate | result: success | client_id: %v", c.config.ID)
-		return
-	} else {
-		log.Infof("action: loop_finished | result: success | client_id: %v", c.config.ID)
-	}
+
 }
 
 func (c *Client) Terminate() {

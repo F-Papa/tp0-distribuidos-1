@@ -47,3 +47,33 @@ Otra cambio es que `client.createClientSocket` chequea el valor de `terminated` 
 Dentro del loop cuando se chequea si hubieron errores en las operaciones de red, no se loggean errores si `terminated == True`, ya que es esperable que ocurran dado que se está intentando usar un socket cerrado. 
 
 Para manejar la señal del SO, tuve que crear un `channel` que escuchara las señales. Este channel y un puntero al puntero del cliente son pasados como parámetros al handler, que al recibir una señal `SIGTERM`, llama a `client.Terminate` en caso de que `client` ya existiera.
+
+## Ejercicio 5
+
+### Cliente
+#### Apuestas
+Para la implementación de los nuevos requisitos del cliente, tuve que crear una clase `Bet` y una clase `BettorInfo` (información de quien apuesta). Junto con ellas pensé en una forma de serializar las apuestas y resultó así:
+
+    <tamaño paquete><id agencia><número><nombre>|<apellido>|<dni>|<fecha de nacimiento>
+
+Donde los primeros 3 campos no necesitan delimitador porque tienen tamaño fijo:
+- `tamaño paquete`: 1 Byte (Serializaciones de a lo sumo 255 bytes)
+- `id agencia`: 1 Byte (A lo sumo 255 agencias, y solo hay 5)
+- `número`: 2 Byte (Numeros del 0 al 65535)
+
+Y los 4 campos siguientes siguientes están delimitados por el caracter `|`, ya que su tamaño es variable.
+
+La confirmación es la más simple posible, 1 solo Byte con valor `1`, ya que solo hay una apuesta por cliente y no habrá otras confirmaciones con las cuales se pueda confundir.
+
+#### Short-Read y Short-Write
+
+El short-write es solucionado mediante un ciclo que sigue enviando los bytes que no se enviaron en caso de que los bytes escritos sean menores a la longitude de la serialización en bytes.
+
+Para el short-read de la confirmación, se hace lo mismo, solo que con lectura en vez de de escritura. Esto es posible porque se sabe que la respuesta va a ser simplemente `"1\n"`.
+
+### Servidor
+#### Recepción de Apuestas
+Para el lado del servidor, implementé un módulo de `communication` que mediante el método `recv_bet` es capaz de recibir una apuesta por medio de un socket, protegiéndose del **short-read** utilizando  el primer Byte de la serializacion (que indica su longitud) y comparándolo con los Bytes leídos hasta ese momento. Además, devuelve una instancia de la clase `Bet` provista por la cátedra. 
+
+#### Confirmación
+El módulo `communication` también provee una función `send_confirmation` que envía a través del socket la confirmación que fue descripta anteriormente, `"1\n"`, contamplando también la posibilidad de un Short-Write y protegiéndose contra ella.
