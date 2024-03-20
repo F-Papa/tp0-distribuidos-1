@@ -9,6 +9,7 @@ class Server:
         self._server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._server_socket.bind(('', port))
         self._server_socket.listen(listen_backlog)
+        self._conn = None
         self._terminated = False
 
     def run(self):
@@ -22,15 +23,20 @@ class Server:
 
         while not self._terminated:
             try:
-                client_sock = self.__accept_new_connection()
-                self.__handle_client_connection(client_sock)
+                self.__accept_new_connection()
+                self.__handle_client_connection()
             except OSError as e:
-                if not (self._terminated and e.errno == errno.EBADF):
+                if not self._terminated:
                     raise e
+        
+        self._server_socket.close()
+        if self._conn is not None:
+            self._conn.close()
+
         logging.info('action: stop_server | result: success')
         
 
-    def __handle_client_connection(self, client_sock):
+    def __handle_client_connection(self):
         """
         Read message from a specific client socket and closes the socket
 
@@ -39,15 +45,15 @@ class Server:
         """
         try:
             # TODO: Modify the receive to avoid short-reads
-            msg = client_sock.recv(1024).rstrip().decode('utf-8')
-            addr = client_sock.getpeername()
+            msg = self._conn.recv(1024).rstrip().decode('utf-8')
+            addr = self._conn.getpeername()
             logging.info(f'action: receive_message | result: success | ip: {addr[0]} | msg: {msg}')
             # TODO: Modify the send to avoid short-writes
-            client_sock.send("{}\n".format(msg).encode('utf-8'))
+            self._conn.send("{}\n".format(msg).encode('utf-8'))
         except OSError as e:
             logging.error("action: receive_message | result: fail | error: {e}")
         finally:
-            client_sock.close()
+            self._conn.close()
 
     def __accept_new_connection(self):
         """
@@ -61,10 +67,12 @@ class Server:
         logging.info('action: accept_connections | result: in_progress')
         c, addr = self._server_socket.accept()
         logging.info(f'action: accept_connections | result: success | ip: {addr[0]}')
-        return c
+        self._conn = c
 
     def stop(self):
         # Set the server to terminated state, so it won't keep looping
         logging.info('action: stop_server | result: in_progress')
         self._terminated = True
-        self._server_socket.close()
+        self._server_socket.shutdown(socket.SHUT_RDWR)
+        if self._conn is not None:
+            self._conn.shutdown(socket.SHUT_RDWR)
