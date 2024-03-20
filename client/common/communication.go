@@ -45,10 +45,22 @@ func RecieveConfirmation(conn *net.Conn) (int, int, error) {
 		return 0, 0, err
 	}
 
+	// At least 1 byte was read
 	message_code := int(msg[0])
 
-	if message_code != 21 || len(msg) != 8 {
+	if message_code != 21 {
 		return 0, 0, fmt.Errorf("invalid confirmation message")
+	}
+
+	// Remove the new-line character
+	msg = msg[:len(msg)-1]
+
+	for len(msg) < 6 {
+		reading, err := bufio.NewReader(*conn).ReadString('\n')
+		if err != nil {
+			return 0, 0, err
+		}
+		msg += reading[:len(msg)-1]
 	}
 
 	dni := int(msg[1])<<24 | int(msg[2])<<16 | int(msg[3])<<8 | int(msg[4])
