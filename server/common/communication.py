@@ -1,6 +1,4 @@
-import logging
 import socket
-import datetime
 from .utils import Bet
 
 

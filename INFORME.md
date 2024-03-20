@@ -50,30 +50,45 @@ Para manejar la señal del SO, tuve que crear un `channel` que escuchara las se�
 
 ## Ejercicio 5
 
-### Cliente
+### Serialización
 #### Apuestas
 Para la implementación de los nuevos requisitos del cliente, tuve que crear una clase `Bet` y una clase `BettorInfo` (información de quien apuesta). Junto con ellas pensé en una forma de serializar las apuestas y resultó así:
 
-    <tamaño paquete><id agencia><número><nombre>|<apellido>|<dni>|<fecha de nacimiento>
+    <tamaño><agencia><número><dni><dia><mes><año><nombre>|<apellido>
 
-Donde los primeros 3 campos no necesitan delimitador porque tienen tamaño fijo:
-- `tamaño paquete`: 1 Byte (Serializaciones de a lo sumo 255 bytes)
+Donde los primeros 7 campos no necesitan delimitador porque tienen tamaño fijo:
+- `tamaño`: 1 Byte (Serializaciones de a lo sumo 255 bytes)
 - `id agencia`: 1 Byte (A lo sumo 255 agencias, y solo hay 5)
-- `número`: 2 Byte (Numeros del 0 al 65535)
+- `número`: 2 Bytes (Numeros del 0 al 65535)
+- `dni`: 4 Bytes Números hasta 100M+
+- `día`: 1 Bytes (Día de nacimiento)
+- `mes`: 1 Bytes (Mes de nacimiento)
+- `año`: 2 Bytes (Año de nacimiento)
 
-Y los 4 campos siguientes siguientes están delimitados por el caracter `|`, ya que su tamaño es variable.
+Y los 2 campos siguientes siguientes están delimitados por el caracter `|`, ya que su tamaño es variable.
 
-La confirmación es la más simple posible, 1 solo Byte con valor `1`, ya que solo hay una apuesta por cliente y no habrá otras confirmaciones con las cuales se pueda confundir.
+#### Confirmación
+Los mensajes de confirmacion tienen el siguiente formato y son siempre de 6 Bytes:
+
+    <codigo msj><dni><número>
+- `codigo msj`: 1 Bytes (El número 21, que en mi protocolo corresponde a confirmación, dándole al receptor la certeza de que tendrá 6 bytes de longitud).
+- `dni`: 4 Bytes Números hasta 100M+
+- `número`: 2 Bytes (Numeros del 0 al 65535)
 
 #### Short-Read y Short-Write
 
 El short-write es solucionado mediante un ciclo que sigue enviando los bytes que no se enviaron en caso de que los bytes escritos sean menores a la longitude de la serialización en bytes.
 
-Para el short-read de la confirmación, se hace lo mismo, solo que con lectura en vez de de escritura. Esto es posible porque se sabe que la respuesta va a ser simplemente `"1\n"`.
+Para el short-read de la confirmación, se hace lo mismo, solo que con lectura en vez de de escritura. Esto es posible porque se sabe que el mensaje de confirmación va a ser de 6 bytes.
 
 ### Servidor
 #### Recepción de Apuestas
 Para el lado del servidor, implementé un módulo de `communication` que mediante el método `recv_bet` es capaz de recibir una apuesta por medio de un socket, protegiéndose del **short-read** utilizando  el primer Byte de la serializacion (que indica su longitud) y comparándolo con los Bytes leídos hasta ese momento. Además, devuelve una instancia de la clase `Bet` provista por la cátedra. 
 
 #### Confirmación
-El módulo `communication` también provee una función `send_confirmation` que envía a través del socket la confirmación que fue descripta anteriormente, `"1\n"`, contamplando también la posibilidad de un Short-Write y protegiéndose contra ella.
+El módulo `communication` también provee una función `send_confirmation` que envía a través del socket la confirmación que fue descripta anteriormente para una instancia de `Bet`
+
+
+### Cliente
+#### Módulo Communication
+En el lado del cliente, el módulo de comunicaciones provee las funciones `SendBet` y `RecieveConfirmation`. La Primera se encarga de serializar una apuesta (si no supera los 255 bytes) y enviarla por un socket, asegurándose de no hacer un *short-write*. La segunda recibe un mensaje por el socket y si es un mensaje de confirmación válido, devuelve los campos `número` y `dni` del mismo.
