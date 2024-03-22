@@ -21,6 +21,7 @@ type Bet struct {
 }
 
 func NewBettorInfo(name, lastname string, dni int, birthdate string) *BettorInfo {
+
 	parsedDate, _ := time.Parse("2006-01-02", birthdate)
 	bettorInfo := &BettorInfo{
 		name:      name,

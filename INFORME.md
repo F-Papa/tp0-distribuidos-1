@@ -92,3 +92,22 @@ El módulo `communication` también provee una función `send_confirmation` que 
 ### Cliente
 #### Módulo Communication
 En el lado del cliente, el módulo de comunicaciones provee las funciones `SendBet` y `RecieveConfirmation`. La Primera se encarga de serializar una apuesta (si no supera los 255 bytes) y enviarla por un socket, asegurándose de no hacer un *short-write*. La segunda recibe un mensaje por el socket y si es un mensaje de confirmación válido, devuelve los campos `número` y `dni` del mismo.
+
+## Ejercicio 6
+Para este ejercicio el módulo `communication` de ambas partes se vio modificado para trabajar con arreglos (o listas) de `Bet` en vez de una sola. 
+
+### Serialización
+La serializacion de los batch de apuestas es muy similar a lo que era.
+
+    <tamaño batch><id agencia><apuesta>
+
+Donde `tamaño` ocupa 2 bytes y es el tamaño del paquete en bytes. `id agencia` ocupa 1 byte, y `apuesta` es la informacion de la apuesta serializada como antes solo que ahora sin los primeros 2 campos, ya que estos hablan del paquete/batch que de la apuesta individual.
+
+#### Configurabilidad
+El tamaño de paquetes por lote puede especificarse dentro del archivo `config.yaml` bajo `protocol.bets_per_batch`. En caso de no estarlo, se toma el valor por defecto `250`, que mantiene los paquetes de un tamaño  menor al pedido. Se toma como hipótesis que el programa se usará con archivos donde los nombres no sean demasiado más largos que los que hay en `dataset.zip`
+
+### Confirmación
+Este aspecto se simplificó y el servidor solo responde el mensaje de confirmación de 1 byte `21 (base 10)`.
+
+### Ubicación de Archivos
+Los clientes esperan encontrar los archivos en la ubicación especificada por la *variable de entorno* `BETS_FILE`. Para su prueba rápida, `docker-compose-dev.yaml` está configurado para setearla a "data.csv" y a bindear esa ubicación para *i-ésimo* cliente a la ruta relative del host `./data/agency-i.csv`

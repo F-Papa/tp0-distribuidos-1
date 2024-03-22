@@ -9,12 +9,15 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+const DEFAULT_BETS_PER_BATCH = 250
+
 // ClientConfig Configuration used by the client
 type ClientConfig struct {
 	ID            string
 	ServerAddress string
 	LoopLapse     time.Duration
 	LoopPeriod    time.Duration
+	BetsPerBatch  int
 }
 
 // Client Entity that encapsulates how
@@ -27,11 +30,35 @@ type Client struct {
 // NewClient Initializes a new client receiving the configuration
 // as a parameter
 func NewClient(config ClientConfig) *Client {
+	if config.BetsPerBatch <= 0 {
+		config.BetsPerBatch = DEFAULT_BETS_PER_BATCH
+	}
 	client := &Client{
 		config: config,
 	}
 	client.terminated = false
 	return client
+}
+
+// _ReadBetsFromCSVFile Reads the bets from a CSV file
+func (c *Client) _ReadBetsFromCSVFile(file *CSVFile, number int) ([]*Bet, error) {
+	bets := make([]*Bet, 0)
+	for i := 0; i < number; i++ {
+		tokens, err := file.GetNextLine()
+		if err != nil {
+			if err.Error() == "EOF" {
+				break
+			}
+			return make([]*Bet, 0), err
+		}
+		parsed_dni, _ := strconv.Atoi(tokens["dni"])
+		parsed_number, _ := strconv.Atoi(tokens["number"])
+		parsed_agency, _ := strconv.Atoi(c.config.ID)
+		bettorInfo := NewBettorInfo(tokens["name"], tokens["lastname"], parsed_dni, tokens["birthdate"])
+		bet := NewBet(parsed_number, parsed_agency, *bettorInfo)
+		bets = append(bets, bet)
+	}
+	return bets, nil
 }
 
 // CreateClientSocket Initializes client socket. In case of
@@ -58,50 +85,76 @@ func (c *Client) createClientSocket() error {
 // StartClientLoop Send messages to the client until some time threshold is met
 func (c *Client) StartClientLoop() {
 	// Get the environment variables
-	name := os.Getenv("NAME")
-	lastname := os.Getenv("LASTNAME")
-	dni, _ := strconv.Atoi(os.Getenv("DNI"))
-	birthdate := os.Getenv("BIRTHDATE")
-	number, _ := strconv.Atoi(os.Getenv("NUMBER"))
-	agency, _ := strconv.Atoi(c.config.ID)
+	bets_file_path := os.Getenv("BETS_FILE")
+	csv_file := NewCSVFile(bets_file_path)
+	iteration_number := 1
 
-	// Create the bet
-	bettorInfo := NewBettorInfo(name, lastname, dni, birthdate)
-	bet := NewBet(number, int(agency), *bettorInfo)
-	// Create the connection the server
-	c.createClientSocket()
-
-	err := SendBet(bet, &c.conn)
-
-	if err != nil {
-		if !c.terminated {
-			log.Errorf("action: send_message | result: fail | client_id: %v | error: %v",
-				c.config.ID, err)
-			c.conn.Close()
+loop:
+	for timeout := time.After(c.config.LoopLapse); ; iteration_number++ {
+		select {
+		case <-timeout:
+			log.Infof("action: timeout_detected | result: success | client_id: %v",
+				c.config.ID,
+			)
+			break loop
+		default:
 		}
-	}
 
-	received_confirmation := false
+		// Create the connection the server
+		c.createClientSocket()
 
-	for !received_confirmation && !c.terminated {
-		ack_dni, ack_bet_number, err := RecieveConfirmation(&c.conn)
+		// Read the bets from the CSV file
+		log.Debugf("action: read_bets | result: in progress | client_id: %v", c.config.ID)
+
+		bets_batch, err := c._ReadBetsFromCSVFile(csv_file, c.config.BetsPerBatch)
 
 		if err != nil {
-			if !c.terminated && err.Error() != "invalid confirmation message" {
-				log.Errorf("action: recieve_confirmation | result: fail | client_id: %v | error: %v",
+			if err.Error() != "EOF" {
+				log.Errorf("action: read_bets | result: fail | client_id: %v | error: %v",
 					c.config.ID, err)
-				c.conn.Close()
-				return
+				break loop
 			}
 		}
 
-		if ack_dni == dni && ack_bet_number == number {
-			received_confirmation = true
-			log.Infof("action: apuesta_enviada | result: success | dni: %v | numero: %v",
-				ack_dni, ack_bet_number)
+		if len(bets_batch) == 0 {
+			break loop
 		}
+		log.Debugf("action: read_bets | result: success | client_id: %v | bets read: %v", c.config.ID, len(bets_batch))
+
+		// Send the bets to the server
+		agency_id, _ := strconv.Atoi(c.config.ID)
+
+		log.Debugf("action: send_message | result: in progress | client_id: %v",
+			c.config.ID)
+
+		err = SendBets(bets_batch, c.conn, agency_id)
+
+		if err != nil {
+			if !c.terminated {
+				log.Errorf("action: send_message | result: fail | client_id: %v | error: %v",
+					c.config.ID, err)
+				c.conn.Close()
+			}
+		}
+
+		// Wait for the confirmation message
+
+		log.Errorf("action: receive_confirmation | result: in progress | client_id: %v",
+			c.config.ID)
+
+		err = RecieveConfirmation(c.conn)
+		if err == nil {
+			log.Infof("action: apuestas_enviadas | result: success | cantidad: %v | batch: %v", len(bets_batch), iteration_number)
+		} else {
+			if !c.terminated {
+				log.Errorf("action: receive_confirmation | result: fail | client_id: %v | error: %v",
+					c.config.ID, err)
+			}
+		}
+		c.conn.Close()
 	}
 
+	log.Infof("action: loop_finished | result: success | client_id: %v", c.config.ID)
 }
 
 func (c *Client) Terminate() {

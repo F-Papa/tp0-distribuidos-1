@@ -40,12 +40,14 @@ def client_config(client_number: int):
     environment:
       - CLI_ID={client_number}
       - CLI_LOG_LEVEL=DEBUG
+      - BETS_FILE=/data.csv
     networks:
       - testing_net
     depends_on:
       - server
     volumes:
       - ./client/config.yaml:/config.yaml
+      - .data/agency-{client_number}.csv:/data.csv
 """
 
 def network_config():

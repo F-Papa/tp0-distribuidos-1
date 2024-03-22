@@ -46,14 +46,13 @@ class Server:
         client socket will also be closed
         """
         try:
-            bet = communication.recv_bet(self._conn)
-            if bet is not None:
-                store_bets([bet])
+            bets = communication.recv_bet_batch(self._conn)
+            if bets is not None:
+                store_bets(bets)
+                communication.send_confirmation(self._conn)
                 logging.info(
-                    "action: apuesta_almacenada | result: success | dni: {} | numero: {}".format(
-                       bet.document, bet.number)
+                    f"action: batch_apuestas_almacenado | result: success | cantidad: {len(bets)}"
                 )     
-                communication.send_confirmation(bet, self._conn)
         except OSError as e:
             if e.errno in [errno.EBADF,errno.EINTR] and self._terminated:
                 logging.info("action: stop_server | result: success")

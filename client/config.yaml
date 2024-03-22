@@ -6,3 +6,5 @@ loop:
   period: "5s"
 log:
   level: "info"
+# protocol:
+#   bets_per_batch: 1500
