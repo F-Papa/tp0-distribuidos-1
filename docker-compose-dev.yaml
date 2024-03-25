@@ -9,7 +9,7 @@ services:
     entrypoint: python3 /main.py
     environment:
       - PYTHONUNBUFFERED=1
-      - LOGGING_LEVEL=DEBUG
+      - LOGGING_LEVEL=INFO
     networks:
       - testing_net
     volumes:
@@ -21,7 +21,7 @@ services:
     entrypoint: /client
     environment:
       - CLI_ID=1
-      - CLI_LOG_LEVEL=DEBUG
+      - CLI_LOG_LEVEL=INFO
       - BETS_FILE=/data.csv
     networks:
       - testing_net
@@ -37,7 +37,7 @@ services:
     entrypoint: /client
     environment:
       - CLI_ID=2
-      - CLI_LOG_LEVEL=DEBUG
+      - CLI_LOG_LEVEL=INFO
       - BETS_FILE=/data.csv
     networks:
       - testing_net
@@ -53,7 +53,7 @@ services:
     entrypoint: /client
     environment:
       - CLI_ID=3
-      - CLI_LOG_LEVEL=DEBUG
+      - CLI_LOG_LEVEL=INFO
       - BETS_FILE=/data.csv
     networks:
       - testing_net
@@ -62,6 +62,38 @@ services:
     volumes:
       - ./client/config.yaml:/config.yaml
       - .data/agency-3.csv:/data.csv
+
+  client4:
+    container_name: client4
+    image: client:latest
+    entrypoint: /client
+    environment:
+      - CLI_ID=4
+      - CLI_LOG_LEVEL=INFO
+      - BETS_FILE=/data.csv
+    networks:
+      - testing_net
+    depends_on:
+      - server
+    volumes:
+      - ./client/config.yaml:/config.yaml
+      - .data/agency-4.csv:/data.csv
+
+  client5:
+    container_name: client5
+    image: client:latest
+    entrypoint: /client
+    environment:
+      - CLI_ID=5
+      - CLI_LOG_LEVEL=INFO
+      - BETS_FILE=/data.csv
+    networks:
+      - testing_net
+    depends_on:
+      - server
+    volumes:
+      - ./client/config.yaml:/config.yaml
+      - .data/agency-5.csv:/data.csv
 
 networks:
   testing_net:

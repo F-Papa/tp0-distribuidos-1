@@ -13,6 +13,10 @@ class Server:
         self._server_socket.listen(listen_backlog)
         self._conn = None
         self._terminated = False
+        self._clients_finished = {}
+        self._winning_bets_list = []
+        for i in range(1,6):
+            self._clients_finished[i] = False
 
     def run(self):
         """
@@ -36,7 +40,16 @@ class Server:
             self._conn.close()
 
         logging.info('action: stop_server | result: success')
-        
+
+    def __results_ready(self) -> bool:
+        return all(self._clients_finished.values())    
+
+    def _winning_bets(self) -> list[Bet]:
+        if self._winning_bets_list:
+            return self._winning_bets_list
+        else:
+            self._winning_bets_list = [bet for bet in load_bets() if has_won(bet)]
+            return self._winning_bets_list
 
     def __handle_client_connection(self):
         """
@@ -46,13 +59,12 @@ class Server:
         client socket will also be closed
         """
         try:
-            bets = communication.recv_bet_batch(self._conn)
-            if bets is not None:
-                store_bets(bets)
-                communication.send_confirmation(self._conn)
-                logging.info(
-                    f"action: batch_apuestas_almacenado | result: success | cantidad: {len(bets)}"
-                )     
+            message: communication.Message = communication.recv_message(self._conn)
+            if not message:
+                self._conn.close()
+                logging.error(f"action: receive_message | result: fail | error: Unexpected message type")
+                return
+            self.__process_message(message)
         except OSError as e:
             if e.errno in [errno.EBADF,errno.EINTR] and self._terminated:
                 logging.info("action: stop_server | result: success")
@@ -60,6 +72,40 @@ class Server:
                 logging.error("action: receive_message | result: fail | error: {e}")
         finally:
             self._conn.close()
+
+    def __process_message(self, message: communication.Message):
+
+        # Bet message
+        if message.is_bet():
+            logging.debug(f"action: processing_message | result: in_progress | type: bet")
+            bets = message.bets()
+            store_bets(bets)
+            communication.send_confirmation(self._conn)
+            logging.info(
+                f"action: batch_apuestas_almacenado | result: success | cantidad: {len(bets)}"
+            )
+
+        # Finished message
+        elif message.is_finished():
+            logging.debug(f"action: processing_message | result: in_progress | type: finished")
+            self._clients_finished[message.agency_id] = True
+            if self.__results_ready():
+                logging.info(
+                    f"action: sorteo | result: success | cant_ganadores: {len(self._winning_bets())}"
+                ) 
+
+        # Consult winners message
+        elif message.is_consult_winners():
+            logging.debug(f"action: processing_message | result: in_progress | type: consult_winners")
+            if self.__results_ready():
+                winning_bets = self._winning_bets()
+                winning_documents_for_agency = [bet.document for bet in winning_bets if bet.agency == message.agency()]
+                communication.send_winners(self._conn, winning_documents_for_agency)
+                logging.info(
+                    f"action: winners_sent | result: success | cantidad: {len(winning_documents_for_agency)}"
+                )
+            else:
+                communication.send_wait(self._conn)
 
     def __accept_new_connection(self):
         """

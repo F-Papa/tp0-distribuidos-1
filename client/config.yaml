@@ -1,10 +1,10 @@
-# id: 1
+# id:git  1
 server:
   address: "server:12345"
 loop:
-  lapse: "0m20s"
+  lapse: "1m20s"
   period: "5s"
 log:
   level: "info"
-# protocol:
-#   bets_per_batch: 1500
+protocol:
+  bets_per_batch: 2000

@@ -97,11 +97,13 @@ En el lado del cliente, el módulo de comunicaciones provee las funciones `SendB
 Para este ejercicio el módulo `communication` de ambas partes se vio modificado para trabajar con arreglos (o listas) de `Bet` en vez de una sola. 
 
 ### Serialización
-La serializacion de los batch de apuestas es muy similar a lo que era.
+#### Paquete
+    <tamaño batch><id agencia><apuestas>
 
-    <tamaño batch><id agencia><apuesta>
+Donde `tamaño` ocupa 2 bytes y es el tamaño del paquete en bytes. `id agencia` ocupa 1 byte, y `apuestas` es la informacion de las apuestas serializadas una tras otra, cada una con el formato:
 
-Donde `tamaño` ocupa 2 bytes y es el tamaño del paquete en bytes. `id agencia` ocupa 1 byte, y `apuesta` es la informacion de la apuesta serializada como antes solo que ahora sin los primeros 2 campos, ya que estos hablan del paquete/batch que de la apuesta individual.
+#### Apuesta
+    <número><dni><dia><mes><año><nombre>|<apellido>|
 
 #### Configurabilidad
 El tamaño de paquetes por lote puede especificarse dentro del archivo `config.yaml` bajo `protocol.bets_per_batch`. En caso de no estarlo, se toma el valor por defecto `250`, que mantiene los paquetes de un tamaño  menor al pedido. Se toma como hipótesis que el programa se usará con archivos donde los nombres no sean demasiado más largos que los que hay en `dataset.zip`
@@ -109,5 +111,63 @@ El tamaño de paquetes por lote puede especificarse dentro del archivo `config.y
 ### Confirmación
 Este aspecto se simplificó y el servidor solo responde el mensaje de confirmación de 1 byte `21 (base 10)`.
 
-### Ubicación de Archivos
+### Manejo de Archivos
+#### Ubicación
 Los clientes esperan encontrar los archivos en la ubicación especificada por la *variable de entorno* `BETS_FILE`. Para su prueba rápida, `docker-compose-dev.yaml` está configurado para setearla a "data.csv" y a bindear esa ubicación para *i-ésimo* cliente a la ruta relative del host `./data/agency-i.csv`
+
+
+#### Lectura
+La clase `CSVFile` se construye con el path a un archivo. Mediante su método `ReadBetsFromCSVFile` permite leer n lineas del archivo y devolver m cantidad de apuestas. (m < n sii se llega al final del archivo o hay algún error).
+
+## Ejercicio 7
+
+### Nuevos Mensajes
+Se rediseñó el protocolo de comunicación para posibilitar el envío de distintos tipos de mensajes. Ahora cada los mensajes entre partes tienen el siguiente formato:
+    
+    <tamaño><código><agencia><cuerpo>
+
+Donde los campos `tamaño`, `código`, y `agencia` ocupan 2 bytes, 1 byte y 1 byte respectivamente.
+
+#### Bet Message (Código 21)
+Se utiliza para enviar apuestas del cliente al servidor. Se mantiene la serialización de lotes de apuestas del ejercicio anterior una tras otra. Resultado el cuerpo del mensaje:
+
+    <número><dni><dia><mes><año><nombre>|<apellido>|...    
+
+#### Finished Message (Código 20)
+Se utiliza para enviar la finalización del envío de apuestas por parte de una agencia. No tiene cuerpo.
+
+#### Consult Message (Código 23)
+El cliente lo envía al servidor para consultar los resultados del sorteo. No tiene cuerpo.
+
+#### Results Message (Código 22)
+El servidor lo envía al cliente cuando recibe un mensaje `Consult (23)` y ya recibió un mensaje `Finished (20)` de los 5 clientes.
+
+#### Wait Message (Código 25)
+El servidor lo envía al cliente para cuando recibe un mensaje `Consult (23)` y aún no recibió `Finished (20)` de los 5 clientes.
+
+### Cliente
+#### Fases o Etapas
+Para la lograr una implementación de la lógica del cliente, este ahora tiene en su estado la `etapa` en la que se encuentra. Este estado dicta su comportamiento iteración a iteración dentro del método `StartClientLoop`.
+
+##### Fase de Envío de Apuestas
+Durante esta etapa. El cliente lee de su almacenamiento un conjunto de apuestas y las envía. Si se llega al final del archivo, entonces envía el mensaje `Finished (20)` y avanza a la etapa de Consulta de Resultados.
+
+##### Fase de Consulta de Resultados
+El cliente envía el mensaje `Consult (23)` al servidor. Si recibe una respuesta de tipo  `Wait(25)`, se suspende por `loop.interval`. Si la respuesta es en cambio de tipo `Results (22)`, el cliente guarda los ganadores en su estado y avanza a la siguiente etapa.
+
+##### Fase de Anuncio de Ganadores
+En esta etapa el cliente rompe el loop, anuncia los ganadores y continúa con su flujo hasta terminar su ejecución.
+
+### Servidor
+#### Polimorfismo de Mensaje
+La clase abstracta `Message` facilita el procesamiento de mensajes por parte del servidor, hay una clase hija para cada mensaje que pueda recibir por parte del cliente:
+- FinishedMessage
+- BetMessage
+- ConsultWinnersMessage
+
+Cada uno de ellos tiene los atributos necesarios para que el servidor pueda ejecutar la acción correspondiente.
+
+#### Cache de Ganadores
+El servidor tiene el método `_winning_bets` que si es su primera vez ejecutándose lee los ganadores del disco y los guarda en su estado interno para futuros llamados. Si no es el primer llamado, devuelve los ganadores cacheados anteriormente.
+
+

@@ -3,24 +3,102 @@ import socket
 from .utils import Bet
 
 SIZE_FIELD_LENGTH = 2      # Size of the length field in bytes
+TYPE_FIELD_LENGTH = 1      # Size of the type field in bytes
 NUMBER_LENGTH_IN_BYTES = 2 # Size of the number field in bytes
 AGENCY_LENGTH_IN_BYTES = 1 # Size of the agency field in bytes
 DNI_LENGTH_IN_BYTES = 4    # Size of the DNI field in bytes
 YEAR_LENGTH_IN_BYTES = 2   # Size of the year field in bytes
 MONTH_LENGTH_IN_BYTES = 1  # Size of the month field in bytes
 DAY_LENGTH_IN_BYTES = 1    # Size of the day field in bytes
-CONFIRMATION_CODE = 21     # What the server sends to confirm a packet
 
-def _bets_from_bytes(data: bytes) -> list[Bet]:
-    # packet_size = int.from_bytes(data[:1], byteorder='big')
+# Client Codes
+CONNECT_CODE = 10          # The code the client uses to connect to the server
+BET_MSG_CODE = 14          # The code the client uses to send a bet
+FINISHED_CODE = 20         # The code the client uses to end betting
+CONSULT_CODE = 23          # The code the client uses to request the results
+
+# Server Codes
+CONFIRMATION_CODE = 21     # The code the server uses to confirm a bet batch
+RESULTS_MSG_CODE = 22      # The code the server uses to send the results
+WAIT_MSG_CODE = 25          # The code the server uses to tell the client to wait
+
+
+class Message():
+    def __init__(self):
+        self.agency_id = None
+        raise Exception("Message is an abstract class")
+
+    def agency(self):
+        return self.agency_id
+
+    def is_bet(self):
+        return False
+
+    def is_finished(self):
+        return False
+
+    def is_consult_winners(self):
+        return False
+
+class ConsultWinnersMessage(Message):
+    def __init__(self, agency: int):
+        self.agency_id = agency
     
-    agency = int.from_bytes(data[SIZE_FIELD_LENGTH:SIZE_FIELD_LENGTH+AGENCY_LENGTH_IN_BYTES], byteorder='big')
+    def is_consult_winners(self):
+        return True
 
-    offset = 3
+class BetMessage():
+    def __init__(self, agency: int, bets: list[Bet]):   
+        self.agency = agency
+        self.bet_list = bets
+
+    def is_bet(self):
+        return True
+    
+    def bets(self):
+        return self.bet_list
+     
+class FinishedMessage(Message):
+    def __init__(self, agency: int):
+        self.agency_id = agency
+
+    def is_finished(self):
+        return True
+
+
+def recv_message(sock: socket.socket) -> Message:
+    """
+    Receive a message through a socket
+    """
+
+    msg = sock.recv(1024)
+    if not msg:
+        logging.error(f"action: receive_message | result: fail | error: empty message received")
+        return None
+
+    expected_length = int.from_bytes(msg[:SIZE_FIELD_LENGTH], byteorder='big')
+    
+    while len(msg) < expected_length or len(msg) < SIZE_FIELD_LENGTH:
+        msg += sock.recv(1024)
+    
+    message_type = int.from_bytes(msg[SIZE_FIELD_LENGTH:SIZE_FIELD_LENGTH+TYPE_FIELD_LENGTH], byteorder='big')
+    agency_id = int.from_bytes(msg[SIZE_FIELD_LENGTH+TYPE_FIELD_LENGTH:SIZE_FIELD_LENGTH+TYPE_FIELD_LENGTH+AGENCY_LENGTH_IN_BYTES], byteorder='big')
+
+    if message_type == BET_MSG_CODE:
+        bets = _bets_from_bytes(msg[SIZE_FIELD_LENGTH+TYPE_FIELD_LENGTH+AGENCY_LENGTH_IN_BYTES:], agency_id)
+        return BetMessage(agency_id, bets)
+    elif message_type == FINISHED_CODE:
+        return FinishedMessage(agency_id)
+    elif message_type == CONSULT_CODE:
+        return ConsultWinnersMessage(agency_id)
+    else:
+        logging.error(f"action: receive_message | result: fail | error: unknown message received")
+        return None
+
+def _bets_from_bytes(data: bytes, agency: int) -> list[Bet]:
+    # packet_size = int.from_bytes(data[:1], byteorder='big')
+    offset = 0
     bets = []
-
-    #Print data as hex
-    # logging.debug(f"Data Received: {data.hex()}")
 
     while offset < len(data):
         i = offset
@@ -33,18 +111,16 @@ def _bets_from_bytes(data: bytes) -> list[Bet]:
         birth_month = int.from_bytes(data[i:i+MONTH_LENGTH_IN_BYTES], byteorder='big')
         i += MONTH_LENGTH_IN_BYTES
         birth_year = int.from_bytes(data[i:i+YEAR_LENGTH_IN_BYTES], byteorder='big')
-        i += YEAR_LENGTH_IN_BYTES
+        i += YEAR_LENGTH_IN_BYTES    
 
         # Parse name and lastname and increment offset
         first_delim = data.find(b'|', i)
         second_delim = data.find(b'|', first_delim+1)
         
         if first_delim == -1 or second_delim == -1:
-            logging.info(f"Data: {data.hex()}")
-            logging.info(f"offset: {offset} | first_delim: {first_delim} | second_delim: {second_delim} | len(data): {len(data)}")
             break
         
-        decoded_string = data[offset+10:second_delim].decode()
+        decoded_string = data[i:second_delim].decode()
         name, lastname = decoded_string.split('|')
         offset = second_delim + 1
 
@@ -76,17 +152,43 @@ def recv_bet_batch(sock: socket.socket) ->  list[Bet]:
     while len(msg) < expected_length(msg):
         msg += sock.recv(expected_length(msg) - len(msg))
 
-    # logging.debug(f"Received {len(msg)} bytes: {msg.hex()}")
-
     return _bets_from_bytes(msg.rstrip())
+
+def send_winners(sock: socket.socket, winners_documents: list[str]) -> None:
+    """
+    Send the winners through a socket
+    """
+
+    encoded_winners_list = list(map(lambda x: int(x).to_bytes(DNI_LENGTH_IN_BYTES, byteorder='big'), winners_documents))
+    encoded_winners = b''.join(encoded_winners_list)
+    winners_message = RESULTS_MSG_CODE.to_bytes(1, byteorder='big') + encoded_winners
+    _send_aux(sock, winners_message)
 
 def send_confirmation(sock: socket.socket) -> None:
     """
-    Send a message through a socket
+    Send a confirmation message through a socket
     """
-    confirmation_message = CONFIRMATION_CODE.to_bytes(1, byteorder='big') + b"\n"
+    confirmation_message = CONFIRMATION_CODE.to_bytes(1, byteorder='big')
+    _send_aux(sock, confirmation_message)
+    
+def send_wait(sock: socket.socket) -> None:
+    """
+    Send a wait message through a socket
+    """
+    wait_message = WAIT_MSG_CODE.to_bytes(1, byteorder='big')
+    _send_aux(sock, wait_message)
+
+def _send_aux(sock: socket.socket, message: bytes) -> None:
+    """
+    Send a message through a socket guaranteeing that all the bytes are sent
+    """
     total_bytes_sent = 0
-    while total_bytes_sent < len(confirmation_message):
-        bytes_sent = sock.send(confirmation_message[total_bytes_sent:])
+    message += b'\n'
+    bytes_to_send = len(message) + SIZE_FIELD_LENGTH
+    packet = bytes_to_send.to_bytes(SIZE_FIELD_LENGTH, byteorder='big') + message
+
+    while total_bytes_sent < len(packet):
+        bytes_sent = sock.send(packet[total_bytes_sent:])
         total_bytes_sent += bytes_sent
     
+    logging.debug(f"Sent {total_bytes_sent} bytes: {packet.hex()}")
