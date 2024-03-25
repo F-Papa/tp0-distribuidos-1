@@ -153,7 +153,7 @@ loop:
 		}
 		c.conn.Close()
 	}
-
+	csv_file.Close()
 	log.Infof("action: loop_finished | result: success | client_id: %v", c.config.ID)
 }
 
