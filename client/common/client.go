@@ -90,6 +90,7 @@ func (c *Client) StartClientLoop() {
 	// Get the environment variables
 	bets_file_path := os.Getenv("BETS_FILE")
 	csv_file := NewCSVFile(bets_file_path)
+	defer csv_file.Close()
 	agency_id_int, _ := strconv.Atoi(c.config.ID)
 
 loop:
@@ -128,7 +129,6 @@ loop:
 			return
 		}
 	}
-	csv_file.Close()
 
 	if c.terminated {
 		log.Infof("action: terminate client | result: success | client_id: %v", c.config.ID)
