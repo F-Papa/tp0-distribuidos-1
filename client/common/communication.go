@@ -99,10 +99,9 @@ func RecieveBatchConfirmation(conn net.Conn) error {
 func _SendAux(buffer []byte, conn net.Conn, agency_id, message_code int) error {
 
 	header := make([]byte, SIZE_FIELD_LENGTH+MSG_CODE_LENGTH+AGENCY_LENGTH_IN_BYTES)
-
 	// Add the length of the packet as the packet header
-	header[0] = byte(len(buffer) >> 8)
-	header[1] = byte(len(buffer))
+	header[0] = byte((len(buffer) + len(header)) >> 8)
+	header[1] = byte((len(buffer) + len(header)))
 	header[2] = byte(message_code)
 	header[3] = byte(agency_id)
 	buffer = append(header, buffer...)

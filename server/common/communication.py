@@ -76,10 +76,14 @@ def recv_message(sock: socket.socket) -> Message:
         logging.error(f"action: receive_message | result: fail | error: empty message received")
         return None
 
-    expected_length = int.from_bytes(msg[:SIZE_FIELD_LENGTH], byteorder='big')
+    def expected_length(msg: bytes) -> int:
+        if len(msg) < SIZE_FIELD_LENGTH:
+            return SIZE_FIELD_LENGTH
+        
+        return int.from_bytes(msg[:SIZE_FIELD_LENGTH], byteorder='big')
     
-    while len(msg) < expected_length or len(msg) < SIZE_FIELD_LENGTH:
-        msg += sock.recv(1024)
+    while len(msg) < expected_length(msg) < SIZE_FIELD_LENGTH:
+        msg += sock.recv(expected_length(msg) - len(msg))
     
     message_type = int.from_bytes(msg[SIZE_FIELD_LENGTH:SIZE_FIELD_LENGTH+TYPE_FIELD_LENGTH], byteorder='big')
     agency_id = int.from_bytes(msg[SIZE_FIELD_LENGTH+TYPE_FIELD_LENGTH:SIZE_FIELD_LENGTH+TYPE_FIELD_LENGTH+AGENCY_LENGTH_IN_BYTES], byteorder='big')
