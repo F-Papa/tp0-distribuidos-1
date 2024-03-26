@@ -170,4 +170,43 @@ Cada uno de ellos tiene los atributos necesarios para que el servidor pueda ejec
 #### Cache de Ganadores
 El servidor tiene el método `_winning_bets` que si es su primera vez ejecutándose lee los ganadores del disco y los guarda en su estado interno para futuros llamados. Si no es el primer llamado, devuelve los ganadores cacheados anteriormente.
 
+## Ejercicio 8
+
+### Nuevo Mensaje
+#### Connect Message (Código 10)
+El cliente se lo envía al servidor como primer mensaje para que el servidor sepa de qué agencia se trata.
+
+### Mensaje Deprecado
+#### Wait Message (Código 25)
+
+
+### Servidor
+
+#### Conexiones Mantenidas
+Para implementar este ejercicio, decidí que los clientes mantuviesen su conexión con el servidor hasta que terminara su comunicación.
+
+##### Registradas
+Una vez aceptada la conexión, el server espera un mensaje `Connect (10)`, y almacena el socket en cuestión dentro del diccionario `_registered_connections` bajo la clave `{agency_id}`, provista en el mensaje connect.
+
+##### No Registradas
+Hasta no registrarse con el mensaje `Connect (10)`, el socket para comunicarse con el cliente se guarda en otro diccionario `_unregisered_connections` usando como clave la dirección IP y puerto mediante los cuales se conecta el cliente. Esto surge de la necesidad de hacer shutdown a todos los sockets abiertos en caso de un `SIGN_INT`, por lo que estén registrados o no, debemos poder acceder a ellos.
+
+#### Multithreading
+En este modelo, hay 1 thread principal y 1 más por cada agencia/cliente conectado. Una vez aceptada la conexión en el thread principal, se ejecuta un thread nuevo que se ocupa de la comunicación con el cliente correspondiente.
+
+##### Exclusión Mutua
+
+Hay 3 locks para garantizar exlusión mutua en secciones críticas
+- `_bets_lock`: Necesario cada vez que se guarden o cargen apuestas.
+- `_connections_lock`: Necesario cada vez que se agregue, modifique, o elimine una conexión. 
+- el lock interno a `_result_condition`: Necesario para le lectura o escritura de `clients_finished`, donde se chequea si todos los clientes terminaron de enviar apuestas.
+
+##### Condvars (Condiciones)
+La variable `_results_condition` se usa para que los threads de los clientes se suspendan hasta que estén los resultados listos. Los threads que están esperando son notificados cuando el último cliente envía el mensaje `Finished (20)`. En caso de una interrupción del programa, también son notificados para poder terminar con la ejecución del programa de forma ordenada.
+
+Por este motivo el mensaje `Wait (25)` queda fuera de uso, ya que cuando un el server recibe un mensaje `Finished (20)` puede esperar hasta que los resultados estén listos para contestar, ya que tiene otros threads para terminar de recibir las apuestas que faltan.
+
+### Cliente
+
+Para esta versión el cliente pasó a inciar la conexión antes de entrar en el loop principal, en vez de hacerlo en cada iteración ya que ahora usa el mismo socket desde el principio hasta el final. Además, ni bien se conecta envía el mensaje `Connect (10)`.
 
