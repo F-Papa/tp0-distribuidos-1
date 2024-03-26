@@ -48,6 +48,11 @@ func SendFinishedMessage(conn net.Conn, agency_id int) error {
 	return _SendAux([]byte{}, conn, agency_id, FINISHED_CODE)
 }
 
+// Sends a message to the server indicating that the client has finished sending bets.
+func SendConnectMessage(conn net.Conn, agency_id int) error {
+	return _SendAux([]byte{}, conn, agency_id, CONNECT_CODE)
+}
+
 // Sends a message to the server requesting the results of the lottery.
 func ConsultResults(conn net.Conn, agency_id int) error {
 	return _SendAux([]byte{}, conn, agency_id, CONSULT_CODE)

@@ -106,6 +106,8 @@ def recv_message(sock: socket.socket) -> Message:
         return FinishedMessage(agency_id)
     elif message_type == CONSULT_CODE:
         return ConsultWinnersMessage(agency_id)
+    elif message_type == CONNECT_CODE:
+        return ConnectMessage(agency_id)
     else:
         logging.error(f"action: receive_message | result: fail | error: Unknown message received | message: {msg.hex()}")
         logging.error(f"Length: {expected_length(msg)}")

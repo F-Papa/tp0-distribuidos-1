@@ -2,6 +2,7 @@ import os
 import socket
 import logging
 import errno
+import threading
 from . import communication
 from .utils import *
 
@@ -11,11 +12,13 @@ class Server:
         self._server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._server_socket.bind(('', port))
         self._server_socket.listen(listen_backlog)
-        self._conn = None
+        self.registed_connections = {}
+        self.unregistered_connections = {}
+        self.handles = []
         self._terminated = False
         self._clients_finished = {}
         self._winning_bets_list = []
-        for i in range(1,6):
+        for i in range(1,2):
             self._clients_finished[i] = False
 
     def run(self):
@@ -27,14 +30,16 @@ class Server:
         finishes, servers starts to accept new connections again
         """
 
-        self.__accept_new_connection()
         while not self._terminated:
             try:
-                self.__handle_client_connection()
+                sock, addr = self.__accept_new_connection()
+                thread = threading.Thread(target=self.__handle_new_connection, args=(sock, addr))
+                thread.start()
+                self.handles.append(thread)
             except OSError as e:
                 if not self._terminated:
                     raise e
-        
+
         self._server_socket.close()
         if self._conn is not None:
             self._conn.close()
@@ -51,24 +56,42 @@ class Server:
             self._winning_bets_list = [bet for bet in load_bets() if has_won(bet)]
             return self._winning_bets_list
 
-    def __handle_client_connection(self):
+    def __handle_new_connection(self, sock, addr):
+        self.unregistered_connections[addr] = sock
+
+        message = communication.recv_message(sock)
+        if not message or not message.is_connect():
+            logging.info(f"action: connect | result: failure | ip: {addr[0]}")
+            sock.close()
+            return
+
+        agency = message.agency()
+        self.registed_connections[agency] = self.unregistered_connections.pop(addr)
+        logging.info(f"action: connect | result: success | ip: {addr[0]} | agency: {agency}")
+        self.__handle_client_connection(sock, agency)
+
+
+    def __handle_client_connection(self, sock, agency):
         """
         Read message from a specific client socket and closes the socket
 
         If a problem arises in the communication with the client, the
         client socket will also be closed
         """
-        try:
-            message: communication.Message = communication.recv_message(self._conn)
-            if not message:
-                self._conn.close()
-                return
-            self.__process_message(message)
-        except OSError as e:
-            if e.errno in [errno.EBADF,errno.EINTR] and self._terminated:
-                logging.info("action: stop_server | result: success")
-            else:
-                raise e
+
+        results_sent = False
+        while not self._terminated and not results_sent:
+            try:
+                message: communication.Message = communication.recv_message(sock)
+                if not message:
+                    self.registed_connections[agency].close()
+                    return
+                results_sent = self.__process_message(message)
+            except OSError as e:
+                if e.errno in [errno.EBADF,errno.EINTR] and self._terminated:
+                    logging.info("action: stop_server | result: success")
+                else:
+                    raise e
 
     def __process_message(self, message: communication.Message):
         # Bet message
@@ -76,10 +99,11 @@ class Server:
             logging.debug(f"action: processing_message | agency: {message.agency()} | result: in_progress | type: bet")
             bets = message.bets()
             store_bets(bets)
-            communication.send_confirmation(self._conn)
+            communication.send_confirmation(self.registed_connections[message.agency()])
             logging.info(
                 f"action: batch_apuestas_almacenado | agency: {message.agency()} | result: success | cantidad: {len(bets)}"
             )
+            return False
 
         # Finished message
         elif message.is_finished():
@@ -89,6 +113,7 @@ class Server:
                 logging.info(
                     f"action: sorteo | result: success | agency: {message.agency()} | cant_ganadores: {len(self._winning_bets())}"
                 ) 
+            return False
 
         # Consult winners message
         elif message.is_consult_winners():
@@ -96,12 +121,14 @@ class Server:
             if self.__results_ready():
                 winning_bets = self._winning_bets()
                 winning_documents_for_agency = [bet.document for bet in winning_bets if bet.agency == message.agency()]
-                communication.send_winners(self._conn, winning_documents_for_agency)
+                communication.send_winners(self.registed_connections[message.agency()], winning_documents_for_agency)
                 logging.info(
                     f"action: winners_sent | agency: {message.agency()} | result: success | cantidad: {len(winning_documents_for_agency)}"
                 )
+                return True
             else:
-                communication.send_wait(self._conn)
+                communication.send_wait(self.registed_connections[message.agency()])
+                return False
 
     def __accept_new_connection(self):
         """
@@ -115,12 +142,18 @@ class Server:
         logging.info('action: accept_connections | result: in_progress')
         c, addr = self._server_socket.accept()
         logging.info(f'action: accept_connections | result: success | ip: {addr[0]}')
-        self._conn = c
+        return c, addr
 
     def stop(self):
         # Set the server to terminated state, so it won't keep looping
         logging.info('action: stop_server | result: in_progress')
         self._terminated = True
         self._server_socket.shutdown(socket.SHUT_RDWR)
-        if self._conn is not None:
-            self._conn.shutdown(socket.SHUT_RDWR)
+        
+        for sock in self.unregistered_connections.values():
+            sock.shutdown(socket.SHUT_RDWR)
+            sock.close()
+        
+        for sock in self.registed_connections.values():
+            sock.shutdown(socket.SHUT_RDWR)
+            sock.close()

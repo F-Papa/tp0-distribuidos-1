@@ -97,11 +97,19 @@ func (c *Client) StartClientLoop() {
 		}
 		return
 	}
+	agency_id_int, _ := strconv.Atoi(c.config.ID)
+	err = SendConnectMessage(c.conn, agency_id_int)
+	if err != nil {
+		if !c.terminated {
+			log.Errorf("action: send_connect | result: fail | client_id: %v | error: %v",
+				c.config.ID, err)
+		}
+		return
+	}
 
 	bets_file_path := os.Getenv("BETS_FILE")
 	csv_file := NewCSVFile(bets_file_path)
 	defer csv_file.Close()
-	agency_id_int, _ := strconv.Atoi(c.config.ID)
 
 loop:
 	for timeout := time.After(c.config.LoopLapse); !c.terminated; {
