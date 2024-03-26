@@ -22,6 +22,7 @@ class Server:
             self._clients_finished[i] = False
         self._results_condition = threading.Condition()
         self._bets_lock = threading.Lock()
+        self._connections_lock = threading.Lock()
 
 
     def run(self):
@@ -49,11 +50,16 @@ class Server:
                     raise e
 
         self._server_socket.close()
-        for sock in self.unregistered_connections.values():
-            sock.close()
         
-        for sock in self.registed_connections.values():
-            sock.close()
+        logging.info('action: stop_server | result: finishing')
+
+        if not self._terminated:
+            with self._connections_lock:
+                for sock in self.unregistered_connections.values():
+                    sock.close()
+                
+                for sock in self.registed_connections.values():
+                    sock.close()
         
         for handle in self.handles:
             handle.join()
@@ -81,7 +87,8 @@ class Server:
             return
 
         agency = message.agency()
-        self.registed_connections[agency] = self.unregistered_connections.pop(addr)
+        with self._connections_lock:
+            self.registed_connections[agency] = self.unregistered_connections.pop(addr)
         logging.info(f"action: connect | result: success | ip: {addr[0]} | agency: {agency}")
         self.__handle_client_connection(sock, agency)
 
@@ -99,17 +106,18 @@ class Server:
             try:
                 message: communication.Message = communication.recv_message(sock)
                 if not message:
-                    self.registed_connections[agency].close()
-                    return
+                    logging.info(f"action: recv message | result: failure | agency: {agency} | error: {e}")
+                    break
                 results_sent = self.__process_message(message)
             except OSError as e:
-                if e.errno in [errno.EBADF,errno.EINTR] and self._terminated:
-                    logging.info("action: stop_server | result: success")
-                else:
-                    raise e
-            
-            time.sleep(2)
-        logging.info(f"action: disconnect | result: success | agency: {agency}")
+                if not self._terminated:
+                    logging.error(f"action: recv message | result: failure | agency: {agency} | error: {e}")
+                break
+
+        with self._connections_lock:
+            self.registed_connections[agency].close()
+            del self.registed_connections[agency]
+        logging.info(f"action: stop thread | result: success | agency: {agency}")
 
     def __process_message(self, message: communication.Message):
         # Bet message
@@ -144,7 +152,9 @@ class Server:
                 with self._results_condition:
                     logging.info(f"action: wait for winners | agency: {message.agency()} | result: in_progress")
                     self._results_condition.wait()
-
+                    if self._terminated:
+                        return False
+    
             winning_bets = self._winning_bets()
             winning_documents_for_agency = [bet.document for bet in winning_bets if bet.agency == message.agency()]
             communication.send_winners(self.registed_connections[message.agency()], winning_documents_for_agency)
@@ -169,14 +179,20 @@ class Server:
 
     def stop(self):
         # Set the server to terminated state, so it won't keep looping
-        logging.info('action: stop_server | result: in_progress')
+        logging.info('action: stop_server | result: started')
         self._terminated = True
         self._server_socket.shutdown(socket.SHUT_RDWR)
-        
-        for sock in self.unregistered_connections.values():
-            sock.shutdown(socket.SHUT_RDWR)
-            sock.close()
-        
-        for sock in self.registed_connections.values():
-            sock.shutdown(socket.SHUT_RDWR)
-            sock.close()
+ 
+        with self._connections_lock:
+            for sock in self.unregistered_connections.values():
+                sock.shutdown(socket.SHUT_RDWR)
+                sock.close()
+            
+            for sock in self.registed_connections.values():
+                sock.shutdown(socket.SHUT_RDWR)
+                sock.close()
+            
+        with self._results_condition:
+            self._results_condition.notify_all()
+
+        logging.info('action: stop_server | result: in progress')
