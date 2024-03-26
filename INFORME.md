@@ -128,7 +128,7 @@ Se rediseñó el protocolo de comunicación para posibilitar el envío de distin
 
 Donde los campos `tamaño`, `código`, y `agencia` ocupan 2 bytes, 1 byte y 1 byte respectivamente.
 
-#### Bet Message (Código 21)
+#### Bet Message (Código 14)
 Se utiliza para enviar apuestas del cliente al servidor. Se mantiene la serialización de lotes de apuestas del ejercicio anterior una tras otra. Resultado el cuerpo del mensaje:
 
     <número><dni><dia><mes><año><nombre>|<apellido>|...    
