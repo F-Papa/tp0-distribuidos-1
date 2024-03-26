@@ -20,6 +20,9 @@ class Server:
         self._winning_bets_list = []
         for i in range(1,2):
             self._clients_finished[i] = False
+        self._results_condition = threading.Condition()
+        self._bets_lock = threading.Lock()
+
 
     def run(self):
         """
@@ -33,6 +36,11 @@ class Server:
         while not self._terminated:
             try:
                 sock, addr = self.__accept_new_connection()
+                for thread in self.handles:
+                    if not thread.is_alive():
+                        thread.join()
+                        self.handles.remove(thread)
+
                 thread = threading.Thread(target=self.__handle_new_connection, args=(sock, addr))
                 thread.start()
                 self.handles.append(thread)
@@ -41,18 +49,25 @@ class Server:
                     raise e
 
         self._server_socket.close()
-        if self._conn is not None:
-            self._conn.close()
-
+        for sock in self.unregistered_connections.values():
+            sock.close()
+        
+        for sock in self.registed_connections.values():
+            sock.close()
+        
+        for handle in self.handles:
+            handle.join()
+    
         logging.info('action: stop_server | result: success')
 
     def __results_ready(self) -> bool:
-        return all(self._clients_finished.values())    
+        with self._results_condition:
+            return all(self._clients_finished.values())    
 
     def _winning_bets(self) -> list[Bet]:
-        if self._winning_bets_list:
-            return self._winning_bets_list
-        else:
+        with self._bets_lock:
+            if self._winning_bets_list:
+                return self._winning_bets_list
             self._winning_bets_list = [bet for bet in load_bets() if has_won(bet)]
             return self._winning_bets_list
 
@@ -92,13 +107,17 @@ class Server:
                     logging.info("action: stop_server | result: success")
                 else:
                     raise e
+            
+            time.sleep(2)
+        logging.info(f"action: disconnect | result: success | agency: {agency}")
 
     def __process_message(self, message: communication.Message):
         # Bet message
         if message.is_bet():
             logging.debug(f"action: processing_message | agency: {message.agency()} | result: in_progress | type: bet")
             bets = message.bets()
-            store_bets(bets)
+            with self._bets_lock:
+                store_bets(bets)
             communication.send_confirmation(self.registed_connections[message.agency()])
             logging.info(
                 f"action: batch_apuestas_almacenado | agency: {message.agency()} | result: success | cantidad: {len(bets)}"
@@ -108,8 +127,11 @@ class Server:
         # Finished message
         elif message.is_finished():
             logging.debug(f"action: processing_message | agency: {message.agency()} | result: in_progress | type: finished")
-            self._clients_finished[message.agency_id] = True
+            with self._results_condition:
+                self._clients_finished[message.agency_id] = True
             if self.__results_ready():
+                with self._results_condition:
+                    self._results_condition.notify_all()
                 logging.info(
                     f"action: sorteo | result: success | agency: {message.agency()} | cant_ganadores: {len(self._winning_bets())}"
                 ) 
@@ -118,17 +140,18 @@ class Server:
         # Consult winners message
         elif message.is_consult_winners():
             logging.debug(f"action: processing_message | agency: {message.agency()} | result: in_progress | type: consult_winners")
-            if self.__results_ready():
-                winning_bets = self._winning_bets()
-                winning_documents_for_agency = [bet.document for bet in winning_bets if bet.agency == message.agency()]
-                communication.send_winners(self.registed_connections[message.agency()], winning_documents_for_agency)
-                logging.info(
-                    f"action: winners_sent | agency: {message.agency()} | result: success | cantidad: {len(winning_documents_for_agency)}"
-                )
-                return True
-            else:
-                communication.send_wait(self.registed_connections[message.agency()])
-                return False
+            if not self.__results_ready():
+                with self._results_condition:
+                    logging.info(f"action: wait for winners | agency: {message.agency()} | result: in_progress")
+                    self._results_condition.wait()
+
+            winning_bets = self._winning_bets()
+            winning_documents_for_agency = [bet.document for bet in winning_bets if bet.agency == message.agency()]
+            communication.send_winners(self.registed_connections[message.agency()], winning_documents_for_agency)
+            logging.info(
+                f"action: winners_sent | agency: {message.agency()} | result: success | cantidad: {len(winning_documents_for_agency)}"
+            )
+            return True
 
     def __accept_new_connection(self):
         """
