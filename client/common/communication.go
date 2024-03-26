@@ -60,13 +60,12 @@ func RecieveConfirmation(conn net.Conn) error {
 func _SendAux(buffer []byte, conn net.Conn, agency_id int) error {
 	total_bytes_written := 0
 
-	length_in_bytes := make([]byte, SIZE_FIELD_LENGTH+AGENCY_LENGTH_IN_BYTES)
-
+	header := make([]byte, SIZE_FIELD_LENGTH+AGENCY_LENGTH_IN_BYTES)
 	// Add the length of the packet as the packet header
-	length_in_bytes[0] = byte(len(buffer) >> 8)
-	length_in_bytes[1] = byte(len(buffer))
-	length_in_bytes[2] = byte(agency_id)
-	buffer = append(length_in_bytes, buffer...)
+	header[0] = byte((len(buffer) + len(header)) >> 8)
+	header[1] = byte(len(buffer) + len(header))
+	header[2] = byte(agency_id)
+	buffer = append(header, buffer...)
 
 	// Send the packet avoiding short writes
 	for total_bytes_written < len(buffer) {

@@ -68,12 +68,16 @@ def recv_bet_batch(sock: socket.socket) ->  list[Bet]:
     if not msg:
         return None
 
-    expected_length = int.from_bytes(msg[:SIZE_FIELD_LENGTH], byteorder='big')
+    def expected_length(msg: bytes) -> int:
+        if len(msg) < SIZE_FIELD_LENGTH:
+            return SIZE_FIELD_LENGTH
+        return int.from_bytes(msg[:SIZE_FIELD_LENGTH], byteorder='big')
     
-    while len(msg) < expected_length:
-        msg += sock.recv(1024)
+    while len(msg) < expected_length(msg):
+        msg += sock.recv(expected_length(msg) - len(msg))
 
     # logging.debug(f"Received {len(msg)} bytes: {msg.hex()}")
+
     return _bets_from_bytes(msg.rstrip())
 
 def send_confirmation(sock: socket.socket) -> None:
