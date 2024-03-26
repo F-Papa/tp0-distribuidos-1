@@ -27,9 +27,9 @@ class Server:
         finishes, servers starts to accept new connections again
         """
 
+        self.__accept_new_connection()
         while not self._terminated:
             try:
-                self.__accept_new_connection()
                 self.__handle_client_connection()
             except OSError as e:
                 if not self._terminated:
@@ -62,47 +62,43 @@ class Server:
             message: communication.Message = communication.recv_message(self._conn)
             if not message:
                 self._conn.close()
-                logging.error(f"action: receive_message | result: fail | error: Unexpected message type")
                 return
             self.__process_message(message)
         except OSError as e:
             if e.errno in [errno.EBADF,errno.EINTR] and self._terminated:
                 logging.info("action: stop_server | result: success")
             else:
-                logging.error("action: receive_message | result: fail | error: {e}")
-        finally:
-            self._conn.close()
+                raise e
 
     def __process_message(self, message: communication.Message):
-
         # Bet message
         if message.is_bet():
-            logging.debug(f"action: processing_message | result: in_progress | type: bet")
+            logging.debug(f"action: processing_message | agency: {message.agency()} | result: in_progress | type: bet")
             bets = message.bets()
             store_bets(bets)
             communication.send_confirmation(self._conn)
             logging.info(
-                f"action: batch_apuestas_almacenado | result: success | cantidad: {len(bets)}"
+                f"action: batch_apuestas_almacenado | agency: {message.agency()} | result: success | cantidad: {len(bets)}"
             )
 
         # Finished message
         elif message.is_finished():
-            logging.debug(f"action: processing_message | result: in_progress | type: finished")
+            logging.debug(f"action: processing_message | agency: {message.agency()} | result: in_progress | type: finished")
             self._clients_finished[message.agency_id] = True
             if self.__results_ready():
                 logging.info(
-                    f"action: sorteo | result: success | cant_ganadores: {len(self._winning_bets())}"
+                    f"action: sorteo | result: success | agency: {message.agency()} | cant_ganadores: {len(self._winning_bets())}"
                 ) 
 
         # Consult winners message
         elif message.is_consult_winners():
-            logging.debug(f"action: processing_message | result: in_progress | type: consult_winners")
+            logging.debug(f"action: processing_message | agency: {message.agency()} | result: in_progress | type: consult_winners")
             if self.__results_ready():
                 winning_bets = self._winning_bets()
                 winning_documents_for_agency = [bet.document for bet in winning_bets if bet.agency == message.agency()]
                 communication.send_winners(self._conn, winning_documents_for_agency)
                 logging.info(
-                    f"action: winners_sent | result: success | cantidad: {len(winning_documents_for_agency)}"
+                    f"action: winners_sent | agency: {message.agency()} | result: success | cantidad: {len(winning_documents_for_agency)}"
                 )
             else:
                 communication.send_wait(self._conn)

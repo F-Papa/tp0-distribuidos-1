@@ -7,4 +7,4 @@ loop:
 log:
   level: "info"
 protocol:
-  bets_per_batch: 2000
+  bets_per_batch: 250

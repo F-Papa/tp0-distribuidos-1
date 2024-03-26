@@ -88,6 +88,16 @@ func (c *Client) createClientSocket() error {
 // StartClientLoop Send messages to the client until some time threshold is met
 func (c *Client) StartClientLoop() {
 	// Get the environment variables
+	// Create the connection the server
+	err := c.createClientSocket()
+	if err != nil {
+		if !c.terminated {
+			log.Errorf("action: create_client_socket | result: fail | client_id: %v | error: %v",
+				c.config.ID, err)
+		}
+		return
+	}
+
 	bets_file_path := os.Getenv("BETS_FILE")
 	csv_file := NewCSVFile(bets_file_path)
 	defer csv_file.Close()
@@ -102,16 +112,6 @@ loop:
 			)
 			break loop
 		default:
-		}
-		// Create the connection the server
-		err := c.createClientSocket()
-		if err != nil {
-			if c.terminated {
-				break loop
-			}
-			log.Errorf("action: create_client_socket | result: fail | client_id: %v | error: %v",
-				c.config.ID, err)
-			return
 		}
 
 		switch c.phase {
@@ -141,7 +141,6 @@ loop:
 // Handles the sending of bets to the server and advances to the next phase
 // if all bets have been sent
 func (c *Client) SendBetsPhase(bets_file *CSVFile) error {
-	defer c.conn.Close()
 	agency_id_int, _ := strconv.Atoi(c.config.ID)
 	bets_batch, err := bets_file.ReadBetsFromCSVFile(c.config.BetsPerBatch, agency_id_int)
 	if err != nil && err.Error() != "EOF" {
@@ -183,7 +182,6 @@ func (c *Client) SendBetsPhase(bets_file *CSVFile) error {
 // Handles the receiving of winners from the server during the second phase and advances to the next phase
 // if the winners are received
 func (c *Client) ConsultWinnersPhase() error {
-	defer c.conn.Close()
 	agency_id_int, _ := strconv.Atoi(c.config.ID)
 
 	err := ConsultResults(c.conn, agency_id_int)

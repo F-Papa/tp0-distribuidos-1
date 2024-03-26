@@ -1,3 +1,4 @@
+from curses.ascii import SI
 import logging
 import socket
 from .utils import Bet
@@ -40,6 +41,9 @@ class Message():
     def is_consult_winners(self):
         return False
 
+    def is_connect(self):
+        return False
+
 class ConsultWinnersMessage(Message):
     def __init__(self, agency: int):
         self.agency_id = agency
@@ -47,9 +51,9 @@ class ConsultWinnersMessage(Message):
     def is_consult_winners(self):
         return True
 
-class BetMessage():
+class BetMessage(Message):
     def __init__(self, agency: int, bets: list[Bet]):   
-        self.agency = agency
+        self.agency_id = agency
         self.bet_list = bets
 
     def is_bet(self):
@@ -65,15 +69,22 @@ class FinishedMessage(Message):
     def is_finished(self):
         return True
 
+class ConnectMessage(Message):
+    def __init__(self, agency: int):
+        self.agency_id = agency
+
+    def is_connect(self):
+        return True
+
 
 def recv_message(sock: socket.socket) -> Message:
     """
     Receive a message through a socket
     """
 
-    msg = sock.recv(1024)
+    msg = sock.recv(SIZE_FIELD_LENGTH)
     if not msg:
-        logging.error(f"action: receive_message | result: fail | error: empty message received")
+        logging.error(f"action: receive_message | result: fail | error: Empty message received")
         return None
 
     def expected_length(msg: bytes) -> int:
@@ -82,7 +93,7 @@ def recv_message(sock: socket.socket) -> Message:
         
         return int.from_bytes(msg[:SIZE_FIELD_LENGTH], byteorder='big')
     
-    while len(msg) < expected_length(msg) < SIZE_FIELD_LENGTH:
+    while len(msg) < expected_length(msg):
         msg += sock.recv(expected_length(msg) - len(msg))
     
     message_type = int.from_bytes(msg[SIZE_FIELD_LENGTH:SIZE_FIELD_LENGTH+TYPE_FIELD_LENGTH], byteorder='big')
@@ -96,7 +107,8 @@ def recv_message(sock: socket.socket) -> Message:
     elif message_type == CONSULT_CODE:
         return ConsultWinnersMessage(agency_id)
     else:
-        logging.error(f"action: receive_message | result: fail | error: unknown message received")
+        logging.error(f"action: receive_message | result: fail | error: Unknown message received | message: {msg.hex()}")
+        logging.error(f"Length: {expected_length(msg)}")
         return None
 
 def _bets_from_bytes(data: bytes, agency: int) -> list[Bet]:
